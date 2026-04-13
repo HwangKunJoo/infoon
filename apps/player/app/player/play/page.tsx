@@ -11,7 +11,7 @@ import { Content } from '@/types/player'
 function PlayerPlayContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const deviceId = searchParams.get('deviceId')
+  const deviceId = "99"
 
   const [contents, setContents] = useState<Content[]>([])
   const [currentIdx, setCurrentIdx] = useState(0)
@@ -48,6 +48,7 @@ function PlayerPlayContent() {
 
     try {
       const res = await deviceApi.get(token)
+      console.log(res)
       const matched = res.data.find((d: any) => d.id === Number(id))
       const list: Content[] = matched?.playlists
         ? matched.playlists.flatMap((pl: any) =>
