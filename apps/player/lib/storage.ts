@@ -6,6 +6,36 @@ const KEYS = {
   USER: 'player_user',
 }
 
+const safeStorage = {
+  getItem(key: string) {
+    try {
+      if (typeof window === 'undefined' || !window.localStorage) return null
+      return window.localStorage.getItem(key)
+    } catch (e) {
+      console.log('[storage] getItem error:', key, e)
+      return null
+    }
+  },
+
+  setItem(key: string, value: string) {
+    try {
+      if (typeof window === 'undefined' || !window.localStorage) return
+      window.localStorage.setItem(key, value)
+    } catch (e) {
+      console.log('[storage] setItem error:', key, e)
+    }
+  },
+
+  removeItem(key: string) {
+    try {
+      if (typeof window === 'undefined' || !window.localStorage) return
+      window.localStorage.removeItem(key)
+    } catch (e) {
+      console.log('[storage] removeItem error:', key, e)
+    }
+  },
+}
+
 export const storage = {
   saveAuth: (
     token: string,
@@ -13,22 +43,30 @@ export const storage = {
     password: string,
     user: { id: number; organization: string; organization_type: string }
   ) => {
-    localStorage.setItem(KEYS.TOKEN, token)
-    localStorage.setItem(KEYS.EMAIL, email)
-    localStorage.setItem(KEYS.PASSWORD, password)
-    localStorage.setItem(KEYS.USER, JSON.stringify(user))
+    safeStorage.setItem(KEYS.TOKEN, token)
+    safeStorage.setItem(KEYS.EMAIL, email)
+    safeStorage.setItem(KEYS.PASSWORD, password)
+    safeStorage.setItem(KEYS.USER, JSON.stringify(user))
   },
 
-  getToken: () => localStorage.getItem(KEYS.TOKEN),
-  getEmail: () => localStorage.getItem(KEYS.EMAIL),
-  getPassword: () => localStorage.getItem(KEYS.PASSWORD),
+  getToken: () => safeStorage.getItem(KEYS.TOKEN),
+  getEmail: () => safeStorage.getItem(KEYS.EMAIL),
+  getPassword: () => safeStorage.getItem(KEYS.PASSWORD),
+
   getUser: () => {
-    const raw = localStorage.getItem(KEYS.USER)
-    return raw ? JSON.parse(raw) : null
+    try {
+      const raw = safeStorage.getItem(KEYS.USER)
+      return raw ? JSON.parse(raw) : null
+    } catch (e) {
+      console.log('[storage] getUser parse error:', e)
+      return null
+    }
   },
 
-  saveDeviceId: (id: string) => localStorage.setItem(KEYS.DEVICE_ID, id),
-  getDeviceId: () => localStorage.getItem(KEYS.DEVICE_ID),
+  saveDeviceId: (id: string) => safeStorage.setItem(KEYS.DEVICE_ID, id),
+  getDeviceId: () => safeStorage.getItem(KEYS.DEVICE_ID),
 
-  clear: () => Object.values(KEYS).forEach((k) => localStorage.removeItem(k)),
+  clear: () => {
+    Object.values(KEYS).forEach((k) => safeStorage.removeItem(k))
+  },
 }

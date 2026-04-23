@@ -51,10 +51,17 @@ export const deviceApi = {
 
 export const getDeviceHardwareInfo = (): { modelId: string; modelName: string } => {
   try {
-    if (typeof (window as any).webapis !== 'undefined') {
+    if (
+      typeof window !== 'undefined' &&
+      typeof (window as any).webapis !== 'undefined' &&
+      (window as any).webapis?.productinfo?.getModelCode
+    ) {
       const modelCode = (window as any).webapis.productinfo.getModelCode()
       return { modelId: modelCode, modelName: modelCode }
     }
-  } catch {}
+  } catch (e) {
+    console.log('[api] getDeviceHardwareInfo error:', e)
+  }
+
   return { modelId: 'web', modelName: 'web_player' }
 }
