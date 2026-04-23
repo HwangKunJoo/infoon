@@ -11,12 +11,13 @@
 
    <feature name="http://tizen.org/feature/screen.size.normal.1080.1920"></feature>
 
-   <tizen:setting screen-orientation="landscape"
-                  context-menu="enable"
-                  background-support="disable"
-                  encryption="disable"
-                  install-location="auto"
-                  hwkey-event="enable"></tizen:setting>
+   <tizen:setting
+  screen-orientation="auto-rotation"
+  context-menu="enable"
+  background-support="disable"
+  encryption="disable"
+  install-location="auto"
+  hwkey-event="enable" />
 
    <tizen:application id="1mzVAyaohK.tizen"
                       package="1mzVAyaohK"

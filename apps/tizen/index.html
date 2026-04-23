@@ -2,7 +2,8 @@
 <html>
 <head>
   <meta charset="UTF-8" />
-  <title>Tizen Redirect Test</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>INFOON TV</title>
   <style>
     html, body {
       margin: 0;
@@ -14,15 +15,20 @@
       display: flex;
       align-items: center;
       justify-content: center;
+      overflow: hidden;
     }
   </style>
 </head>
 <body>
   opening...
   <script>
-  setTimeout(function () {
-    location.href = "https://infoon.vercel.app/tv-login.html";
-  }, 500);
-</script>
+    try {
+      setTimeout(function () {
+        window.location.replace("https://infoon.vercel.app/tv-login.html");
+      }, 500);
+    } catch (e) {
+      document.body.innerHTML = "ERROR: " + String(e);
+    }
+  </script>
 </body>
 </html>
