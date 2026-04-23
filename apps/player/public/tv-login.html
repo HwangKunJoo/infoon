@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+  />
+  <title>인포온 TV 로그인</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      background: #f5f5f5;
+      font-family: Arial, Helvetica, sans-serif;
+      overflow: hidden;
+    }
+
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #111827;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 720px;
+      padding: 32px;
+    }
+
+    .card {
+      background: #ffffff;
+      border-radius: 24px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+      padding: 36px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 44px;
+      font-weight: 700;
+    }
+
+    .sub {
+      margin: 0 0 24px;
+      font-size: 22px;
+      color: #6b7280;
+    }
+
+    .status {
+      margin-bottom: 20px;
+      padding: 14px 16px;
+      border-radius: 12px;
+      background: #f3f4f6;
+      font-size: 20px;
+      color: #374151;
+      word-break: break-word;
+    }
+
+    .field {
+      margin-bottom: 18px;
+    }
+
+    .label {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 20px;
+      font-weight: 600;
+      color: #374151;
+    }
+
+    .input {
+      width: 100%;
+      height: 68px;
+      padding: 0 18px;
+      border: 2px solid #d1d5db;
+      border-radius: 14px;
+      font-size: 24px;
+      outline: none;
+      background: #fff;
+    }
+
+    .input:focus,
+    .btn:focus {
+      border-color: #fb923c;
+      box-shadow: 0 0 0 4px rgba(251, 146, 60, 0.2);
+    }
+
+    .btn {
+      width: 100%;
+      height: 74px;
+      border: none;
+      border-radius: 16px;
+      font-size: 26px;
+      font-weight: 700;
+      cursor: pointer;
+      outline: none;
+    }
+
+    .btn-primary {
+      background: #fb923c;
+      color: white;
+      margin-top: 8px;
+    }
+
+    .btn-secondary {
+      background: #e5e7eb;
+      color: #374151;
+      margin-top: 12px;
+    }
+
+    .error {
+      margin: 14px 0 0;
+      color: #dc2626;
+      font-size: 20px;
+      min-height: 28px;
+    }
+
+    .debug {
+      margin-top: 24px;
+      padding-top: 20px;
+      border-top: 1px solid #e5e7eb;
+    }
+
+    .debug-title {
+      margin: 0 0 10px;
+      font-size: 18px;
+      font-weight: 700;
+      color: #374151;
+    }
+
+    .log-box {
+      max-height: 220px;
+      overflow: auto;
+      background: #f9fafb;
+      border-radius: 12px;
+      padding: 12px;
+    }
+
+    .log-line {
+      margin: 0 0 6px;
+      font-size: 16px;
+      color: #4b5563;
+      word-break: break-word;
+    }
+
+    .hidden {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="card">
+      <h1>로그인</h1>
+      <p class="sub">계정에 접속해 서비스를 시작하세요</p>
+
+      <div id="status" class="status">초기화 중...</div>
+
+      <div id="formArea">
+        <div class="field">
+          <label class="label" for="email">이메일</label>
+          <input id="email" class="input" type="email" placeholder="example@domain.com" />
+        </div>
+
+        <div class="field">
+          <label class="label" for="password">비밀번호</label>
+          <input id="password" class="input" type="password" placeholder="비밀번호" />
+        </div>
+
+        <button id="loginBtn" class="btn btn-primary">로그인</button>
+        <button id="clearBtn" class="btn btn-secondary">저장 정보 초기화</button>
+
+        <p id="error" class="error"></p>
+      </div>
+
+      <div class="debug">
+        <p class="debug-title">디버그 로그</p>
+        <div id="logBox" class="log-box"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      var BASE_URL = 'https://api.onldo.life/api';
+      var WEB_BASE_URL = 'https://infoon.vercel.app';
+
+      var KEYS = {
+        TOKEN: 'player_token',
+        DEVICE_ID: 'player_device_id',
+        EMAIL: 'player_email',
+        PASSWORD: 'player_password',
+        USER: 'player_user'
+      };
+
+      var statusEl = document.getElementById('status');
+      var errorEl = document.getElementById('error');
+      var logBoxEl = document.getElementById('logBox');
+      var emailEl = document.getElementById('email');
+      var passwordEl = document.getElementById('password');
+      var loginBtnEl = document.getElementById('loginBtn');
+      var clearBtnEl = document.getElementById('clearBtn');
+
+      function setStatus(text) {
+        statusEl.textContent = text;
+        log('[STATUS] ' + text);
+      }
+
+      function setError(text) {
+        errorEl.textContent = text || '';
+        if (text) log('[ERROR] ' + text);
+      }
+
+      function log(text) {
+        try {
+          console.log('[TV LOGIN]', text);
+        } catch (e) {}
+
+        var p = document.createElement('p');
+        p.className = 'log-line';
+        p.textContent = text;
+        logBoxEl.appendChild(p);
+        logBoxEl.scrollTop = logBoxEl.scrollHeight;
+      }
+
+      function safeGet(key) {
+        try {
+          return localStorage.getItem(key);
+        } catch (e) {
+          log('localStorage get error: ' + key + ' / ' + String(e));
+          return null;
+        }
+      }
+
+      function safeSet(key, value) {
+        try {
+          localStorage.setItem(key, value);
+        } catch (e) {
+          log('localStorage set error: ' + key + ' / ' + String(e));
+        }
+      }
+
+      function safeRemove(key) {
+        try {
+          localStorage.removeItem(key);
+        } catch (e) {
+          log('localStorage remove error: ' + key + ' / ' + String(e));
+        }
+      }
+
+      function clearStorage() {
+        safeRemove(KEYS.TOKEN);
+        safeRemove(KEYS.DEVICE_ID);
+        safeRemove(KEYS.EMAIL);
+        safeRemove(KEYS.PASSWORD);
+        safeRemove(KEYS.USER);
+      }
+
+      function isInvalidValue(value) {
+        return !value || value === 'undefined' || value === 'null';
+      }
+
+      function withTimeout(promise, ms, label) {
+        return new Promise(function (resolve, reject) {
+          var done = false;
+
+          var timer = setTimeout(function () {
+            if (done) return;
+            done = true;
+            reject(new Error(label + '_TIMEOUT'));
+          }, ms);
+
+          promise.then(function (value) {
+            if (done) return;
+            done = true;
+            clearTimeout(timer);
+            resolve(value);
+          }).catch(function (err) {
+            if (done) return;
+            done = true;
+            clearTimeout(timer);
+            reject(err);
+          });
+        });
+      }
+
+      function fetchJson(path, token, options) {
+        var finalOptions = options || {};
+        var headers = finalOptions.headers || {};
+
+        headers['Content-Type'] = 'application/json';
+        if (token) headers['Authorization'] = 'Bearer ' + token;
+
+        return fetch(BASE_URL + path, {
+          method: finalOptions.method || 'GET',
+          headers: headers,
+          body: finalOptions.body
+        }).then(function (res) {
+          log('HTTP ' + res.status + ' ' + path);
+          if (!res.ok) {
+            throw new Error('HTTP_' + res.status);
+          }
+          return res.json();
+        });
+      }
+
+      function login(email, password) {
+        return fetchJson('/digital_board/auth/login', null, {
+          method: 'POST',
+          body: JSON.stringify({
+            email: email,
+            password: password
+          })
+        });
+      }
+
+      function registerDevice(token, payload) {
+        return fetchJson('/digital_board/devices/register', token, {
+          method: 'POST',
+          body: JSON.stringify({
+            model_id: payload.modelId,
+            device_model_name: payload.modelName,
+            orientation: payload.orientation,
+            user_id: payload.userId,
+            organization: payload.organization,
+            organization_type: payload.organization_type
+          })
+        });
+      }
+
+      function getDeviceHardwareInfo() {
+        try {
+          if (
+            typeof window !== 'undefined' &&
+            window.webapis &&
+            window.webapis.productinfo &&
+            typeof window.webapis.productinfo.getModelCode === 'function'
+          ) {
+            var modelCode = window.webapis.productinfo.getModelCode();
+            return {
+              modelId: modelCode,
+              modelName: modelCode
+            };
+          }
+        } catch (e) {
+          log('getDeviceHardwareInfo error: ' + String(e));
+        }
+
+        return {
+          modelId: 'web',
+          modelName: 'web_player'
+        };
+      }
+
+      function redirectToPlay(deviceId) {
+        setStatus('재생 화면으로 이동 중...');
+        setTimeout(function () {
+          window.location.href = WEB_BASE_URL + '/player/play?deviceId=' + encodeURIComponent(deviceId);
+        }, 300);
+      }
+
+      function registerAndRedirect(token, user) {
+        var savedDeviceId = safeGet(KEYS.DEVICE_ID);
+
+        if (!isInvalidValue(savedDeviceId)) {
+          log('saved deviceId found: ' + savedDeviceId);
+          redirectToPlay(savedDeviceId);
+          return Promise.resolve();
+        }
+
+        var info = getDeviceHardwareInfo();
+        var orientation = window.innerWidth >= window.innerHeight ? 'landscape' : 'portrait';
+
+        setStatus('기기 등록 중...');
+        log('register payload: ' + JSON.stringify({
+          modelId: info.modelId,
+          modelName: info.modelName,
+          orientation: orientation
+        }));
+
+        return withTimeout(
+          registerDevice(token, {
+            modelId: info.modelId,
+            modelName: info.modelName,
+            orientation: orientation,
+            organization: user.organization,
+            organization_type: user.organization_type,
+            userId: user.id
+          }),
+          7000,
+          'DEVICE_REGISTER'
+        ).then(function (res) {
+          var deviceId = String(res.data.id);
+          safeSet(KEYS.DEVICE_ID, deviceId);
+          log('device registered: ' + deviceId);
+          redirectToPlay(deviceId);
+        });
+      }
+
+      function saveAuth(token, email, password, user) {
+        safeSet(KEYS.TOKEN, token);
+        safeSet(KEYS.EMAIL, email);
+        safeSet(KEYS.PASSWORD, password);
+        safeSet(KEYS.USER, JSON.stringify(user));
+      }
+
+      function tryAutoLogin() {
+        setStatus('자동 로그인 확인 중...');
+
+        var savedEmail = safeGet(KEYS.EMAIL);
+        var savedPassword = safeGet(KEYS.PASSWORD);
+
+        log('savedEmail: ' + (savedEmail || '(none)'));
+        log('savedPassword exists: ' + (!!savedPassword));
+
+        if (isInvalidValue(savedEmail) || isInvalidValue(savedPassword)) {
+          setStatus('로그인 정보를 입력해주세요');
+          return Promise.resolve(false);
+        }
+
+        setStatus('자동 로그인 시도 중...');
+
+        return withTimeout(
+          login(savedEmail, savedPassword),
+          7000,
+          'AUTO_LOGIN'
+        ).then(function (res) {
+          if (!res || !res.data || !res.data.token) {
+            clearStorage();
+            setStatus('자동 로그인 실패');
+            setError('저장된 로그인 정보가 유효하지 않습니다.');
+            return false;
+          }
+
+          var token = res.data.token;
+          var user = res.data.user;
+
+          saveAuth(token, savedEmail, savedPassword, user);
+          setStatus('자동 로그인 성공');
+          return registerAndRedirect(token, user).then(function () {
+            return true;
+          });
+        }).catch(function (err) {
+          clearStorage();
+          setStatus('자동 로그인 실패');
+          setError('자동 로그인에 실패했습니다. 다시 로그인해주세요.');
+          log('auto login error: ' + String(err));
+          return false;
+        });
+      }
+
+      function handleLogin() {
+        var email = (emailEl.value || '').trim();
+        var password = passwordEl.value || '';
+
+        setError('');
+
+        if (!email) {
+          setError('이메일을 입력해주세요');
+          return;
+        }
+
+        if (!password) {
+          setError('비밀번호를 입력해주세요');
+          return;
+        }
+
+        setStatus('로그인 요청 중...');
+        loginBtnEl.disabled = true;
+        loginBtnEl.textContent = '로그인 중...';
+
+        withTimeout(
+          login(email, password),
+          7000,
+          'MANUAL_LOGIN'
+        ).then(function (res) {
+          if (!res || !res.data || !res.data.token) {
+            setError('이메일 또는 비밀번호를 확인해주세요');
+            return;
+          }
+
+          var token = res.data.token;
+          var user = res.data.user;
+
+          saveAuth(token, email, password, user);
+          setStatus('로그인 성공');
+
+          return registerAndRedirect(token, user);
+        }).catch(function (err) {
+          setError('로그인 중 오류가 발생했습니다.');
+          log('manual login error: ' + String(err));
+        }).finally(function () {
+          loginBtnEl.disabled = false;
+          loginBtnEl.textContent = '로그인';
+        });
+      }
+
+      loginBtnEl.addEventListener('click', handleLogin);
+
+      clearBtnEl.addEventListener('click', function () {
+        clearStorage();
+        setError('저장된 정보를 초기화했습니다.');
+        setStatus('로그인 정보를 입력해주세요');
+        log('storage cleared manually');
+      });
+
+      emailEl.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.keyCode === 13) {
+          passwordEl.focus();
+        }
+      });
+
+      passwordEl.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.keyCode === 13) {
+          handleLogin();
+        }
+      });
+
+      document.addEventListener('keydown', function (e) {
+        if (e.keyCode === 10009) {
+          e.preventDefault();
+          setError('뒤로가기 버튼은 비활성화되어 있습니다.');
+        }
+      });
+
+      window.onerror = function (msg, src, line, col) {
+        log('window.onerror: ' + String(msg) + ' / ' + String(src) + ' / ' + line + ':' + col);
+      };
+
+      setStatus('초기화 완료');
+      tryAutoLogin().then(function (done) {
+        if (!done) {
+          emailEl.focus();
+        }
+      });
+    })();
+  </script>
+</body>
+</html>
