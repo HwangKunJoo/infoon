@@ -28,10 +28,26 @@
       color: #111827;
     }
 
+    body.landscape {
+      background: #f5f5f5;
+    }
+
+    body.portrait {
+      background: #f7f7f7;
+    }
+
     .container {
       width: 100%;
-      max-width: 720px;
       padding: 32px;
+    }
+
+    body.landscape .container {
+      max-width: 720px;
+    }
+
+    body.portrait .container {
+      max-width: 860px;
+      padding: 48px;
     }
 
     .card {
@@ -41,16 +57,30 @@
       padding: 36px;
     }
 
+    body.portrait .card {
+      padding: 44px;
+      border-radius: 28px;
+    }
+
     h1 {
       margin: 0 0 8px;
       font-size: 44px;
       font-weight: 700;
     }
 
+    body.portrait h1 {
+      font-size: 56px;
+    }
+
     .sub {
       margin: 0 0 24px;
       font-size: 22px;
       color: #6b7280;
+    }
+
+    body.portrait .sub {
+      font-size: 28px;
+      margin-bottom: 32px;
     }
 
     .status {
@@ -63,8 +93,18 @@
       word-break: break-word;
     }
 
+    body.portrait .status {
+      font-size: 24px;
+      padding: 18px 20px;
+      margin-bottom: 28px;
+    }
+
     .field {
       margin-bottom: 18px;
+    }
+
+    body.portrait .field {
+      margin-bottom: 24px;
     }
 
     .label {
@@ -73,6 +113,11 @@
       font-size: 20px;
       font-weight: 600;
       color: #374151;
+    }
+
+    body.portrait .label {
+      font-size: 24px;
+      margin-bottom: 12px;
     }
 
     .input {
@@ -84,6 +129,13 @@
       font-size: 24px;
       outline: none;
       background: #ffffff;
+    }
+
+    body.portrait .input {
+      height: 82px;
+      font-size: 30px;
+      padding: 0 22px;
+      border-radius: 18px;
     }
 
     .input:focus,
@@ -101,6 +153,12 @@
       font-weight: 700;
       cursor: pointer;
       outline: none;
+    }
+
+    body.portrait .btn {
+      height: 88px;
+      font-size: 32px;
+      border-radius: 20px;
     }
 
     .btn-primary {
@@ -127,6 +185,11 @@
       min-height: 28px;
     }
 
+    body.portrait .error {
+      font-size: 24px;
+      min-height: 34px;
+    }
+
     .debug {
       margin-top: 24px;
       padding-top: 20px;
@@ -140,6 +203,10 @@
       color: #374151;
     }
 
+    body.portrait .debug-title {
+      font-size: 22px;
+    }
+
     .log-box {
       max-height: 220px;
       overflow: auto;
@@ -148,11 +215,20 @@
       padding: 12px;
     }
 
+    body.portrait .log-box {
+      max-height: 280px;
+      padding: 16px;
+    }
+
     .log-line {
       margin: 0 0 6px;
       font-size: 16px;
       color: #4b5563;
       word-break: break-word;
+    }
+
+    body.portrait .log-line {
+      font-size: 18px;
     }
   </style>
 </head>
@@ -199,7 +275,8 @@
         DEVICE_ID: 'player_device_id',
         EMAIL: 'player_email',
         PASSWORD: 'player_password',
-        USER: 'player_user'
+        USER: 'player_user',
+        ORIENTATION: 'player_orientation'
       };
 
       var statusEl = document.getElementById('status');
@@ -209,6 +286,25 @@
       var passwordEl = document.getElementById('password');
       var loginBtnEl = document.getElementById('loginBtn');
       var clearBtnEl = document.getElementById('clearBtn');
+
+      function getOrientation() {
+        return window.innerWidth >= window.innerHeight ? 'landscape' : 'portrait';
+      }
+
+      function applyOrientationClass() {
+        var orientation = getOrientation();
+
+        document.body.className = document.body.className
+          .replace('landscape', '')
+          .replace('portrait', '');
+
+        document.body.className = document.body.className + ' ' + orientation;
+
+        safeSet(KEYS.ORIENTATION, orientation);
+        log('[ORIENTATION] ' + orientation);
+
+        return orientation;
+      }
 
       function setStatus(text) {
         statusEl.textContent = text;
@@ -226,6 +322,8 @@
         try {
           console.log('[TV LOGIN]', text);
         } catch (e) {}
+
+        if (!logBoxEl) return;
 
         var p = document.createElement('p');
         p.className = 'log-line';
@@ -265,6 +363,7 @@
         safeRemove(KEYS.EMAIL);
         safeRemove(KEYS.PASSWORD);
         safeRemove(KEYS.USER);
+        safeRemove(KEYS.ORIENTATION);
       }
 
       function isInvalidValue(value) {
@@ -413,11 +512,17 @@
       }
 
       function redirectToPlay(deviceId) {
+        var orientation = getOrientation();
+
         setStatus('재생 화면으로 이동 중...');
 
         setTimeout(function () {
           window.location.href =
-            WEB_BASE_URL + '/tv-play.html?deviceId=' + encodeURIComponent(deviceId);
+            WEB_BASE_URL +
+            '/tv-play.html?deviceId=' +
+            encodeURIComponent(deviceId) +
+            '&orientation=' +
+            encodeURIComponent(orientation);
         }, 300);
       }
 
@@ -431,7 +536,7 @@
         }
 
         var info = getDeviceHardwareInfo();
-        var orientation = window.innerWidth >= window.innerHeight ? 'landscape' : 'portrait';
+        var orientation = applyOrientationClass();
 
         var organization = getUserValue(user, 'organization');
         var organizationType = getUserValue(user, 'organization_type');
@@ -502,6 +607,7 @@
         safeSet(KEYS.EMAIL, email);
         safeSet(KEYS.PASSWORD, password);
         safeSet(KEYS.USER, JSON.stringify(user || {}));
+        safeSet(KEYS.ORIENTATION, getOrientation());
       }
 
       function resetLoginButton() {
@@ -643,6 +749,11 @@
         );
       };
 
+      window.addEventListener('resize', function () {
+        applyOrientationClass();
+      });
+
+      applyOrientationClass();
       setStatus('초기화 완료');
 
       tryAutoLogin().then(function (done) {

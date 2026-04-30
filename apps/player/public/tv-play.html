@@ -2,47 +2,141 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
-  <title>TV Player</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>인포온 TV 플레이어</title>
 
   <script src="https://js.pusher.com/8.4.0/pusher.min.js"></script>
 
   <style>
-    html, body {
-      margin: 0;
-      padding: 0;
-      background: black;
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
       width: 100%;
       height: 100%;
+      margin: 0;
+      padding: 0;
+      background: #000;
+      overflow: hidden;
+      font-family: Arial, Helvetica, sans-serif;
+    }
+
+    body.landscape {
+      background: #000;
+    }
+
+    body.portrait {
+      background: #000;
+    }
+
+    #stage {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      background: #000;
       overflow: hidden;
     }
 
-    video, img {
+    video,
+    img {
+      position: absolute;
+      inset: 0;
       width: 100%;
       height: 100%;
+      background: #000;
+      display: none;
+    }
+
+    body.landscape video,
+    body.landscape img {
       object-fit: contain;
-      background: black;
+    }
+
+    body.portrait video,
+    body.portrait img {
+      object-fit: cover;
+    }
+
+    .empty {
+      position: absolute;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 40px;
+      background: #111;
+      color: #fff;
+      text-align: center;
+      font-size: 34px;
+      line-height: 1.4;
+    }
+
+    body.portrait .empty {
+      font-size: 44px;
+      padding: 64px;
     }
 
     .debug {
       position: absolute;
-      bottom: 0;
       left: 0;
       right: 0;
-      max-height: 200px;
+      bottom: 0;
+      max-height: 180px;
       overflow: auto;
-      background: rgba(0,0,0,0.6);
-      color: #0f0;
+      background: rgba(0, 0, 0, 0.62);
+      color: #39ff14;
       font-size: 14px;
       padding: 10px;
+      z-index: 30;
+    }
+
+    body.portrait .debug {
+      max-height: 260px;
+      font-size: 18px;
+      padding: 14px;
+    }
+
+    .debug.hidden {
+      display: none;
+    }
+
+    .loading {
+      position: absolute;
+      right: 24px;
+      top: 24px;
+      z-index: 20;
+      display: none;
+      padding: 12px 16px;
+      border-radius: 999px;
+      background: rgba(0, 0, 0, 0.58);
+      color: #fff;
+      font-size: 18px;
+    }
+
+    body.portrait .loading {
+      right: 32px;
+      top: 32px;
+      font-size: 24px;
+      padding: 16px 22px;
     }
   </style>
 </head>
 
 <body>
-  <video id="video" autoplay muted playsinline></video>
-  <img id="image" style="display:none;" />
+  <div id="stage">
+    <video id="video" autoplay muted playsinline webkit-playsinline></video>
+    <img id="image" alt="" />
 
-  <div id="debug" class="debug"></div>
+    <div id="empty" class="empty">
+      재생할 콘텐츠가 없습니다.<br />
+      관리자 페이지에서 플레이리스트를 연결해주세요.
+    </div>
+
+    <div id="loading" class="loading">갱신 중...</div>
+    <div id="debug" class="debug"></div>
+  </div>
 
   <script>
     (function () {
@@ -50,162 +144,499 @@
 
       var PUSHER_KEY = 'a707a1d344893077c43d';
       var PUSHER_CLUSTER = 'ap3';
+      var PUSHER_EVENT = 'refresh';
+
+      var KEYS = {
+        TOKEN: 'player_token',
+        DEVICE_ID: 'player_device_id',
+        ORIENTATION: 'player_orientation'
+      };
 
       var videoEl = document.getElementById('video');
       var imageEl = document.getElementById('image');
+      var emptyEl = document.getElementById('empty');
+      var loadingEl = document.getElementById('loading');
       var debugEl = document.getElementById('debug');
 
       var deviceId = getDeviceId();
-
       var contents = [];
       var currentIndex = 0;
+      var imageTimer = null;
+      var refreshTimer = null;
+      var pusherInstance = null;
+      var currentOrientation = null;
+      var isRefreshing = false;
+
+      function safeGet(key) {
+        try {
+          return localStorage.getItem(key);
+        } catch (e) {
+          return null;
+        }
+      }
+
+      function safeSet(key, value) {
+        try {
+          localStorage.setItem(key, value);
+        } catch (e) {}
+      }
+
+      function getQueryParam(name) {
+        var query = window.location.search || '';
+        var key = name + '=';
+        var parts = query.replace('?', '').split('&');
+
+        for (var i = 0; i < parts.length; i++) {
+          if (parts[i].indexOf(key) === 0) {
+            return decodeURIComponent(parts[i].replace(key, ''));
+          }
+        }
+
+        return null;
+      }
+
+      function getDeviceId() {
+        return getQueryParam('deviceId') || safeGet(KEYS.DEVICE_ID);
+      }
+
+      function getToken() {
+        return safeGet(KEYS.TOKEN);
+      }
+
+      function getOrientation() {
+        var queryOrientation = getQueryParam('orientation');
+
+        if (queryOrientation === 'landscape' || queryOrientation === 'portrait') {
+          return queryOrientation;
+        }
+
+        return window.innerWidth >= window.innerHeight ? 'landscape' : 'portrait';
+      }
+
+      function applyOrientationClass() {
+        var orientation = getOrientation();
+        currentOrientation = orientation;
+
+        document.body.className = document.body.className
+          .replace('landscape', '')
+          .replace('portrait', '');
+
+        document.body.className = document.body.className + ' ' + orientation;
+        safeSet(KEYS.ORIENTATION, orientation);
+
+        log('[ORIENTATION] ' + orientation);
+
+        return orientation;
+      }
 
       function log(text) {
-        console.log('[PLAY]', text);
+        try {
+          console.log('[TV PLAY]', text);
+        } catch (e) {}
+
+        if (!debugEl) return;
 
         var div = document.createElement('div');
         div.textContent = text;
         debugEl.appendChild(div);
         debugEl.scrollTop = debugEl.scrollHeight;
+
+        while (debugEl.children.length > 80) {
+          debugEl.removeChild(debugEl.children[0]);
+        }
       }
 
-      function getDeviceId() {
-        var params = new URLSearchParams(window.location.search);
-        return params.get('deviceId');
+      function showLoading(show) {
+        loadingEl.style.display = show ? 'block' : 'none';
       }
 
-      function getToken() {
-        return localStorage.getItem('player_token');
+      function showEmpty(show) {
+        emptyEl.style.display = show ? 'flex' : 'none';
       }
 
-      function fetchDevices() {
-        return fetch(API_URL + '/digital_board/devices', {
-          headers: {
-            Authorization: 'Bearer ' + getToken()
-          }
+      function hidePlayers() {
+        if (imageTimer) {
+          clearTimeout(imageTimer);
+          imageTimer = null;
+        }
+
+        try {
+          videoEl.pause();
+        } catch (e) {}
+
+        videoEl.removeAttribute('src');
+        videoEl.load();
+
+        videoEl.style.display = 'none';
+        imageEl.style.display = 'none';
+        imageEl.removeAttribute('src');
+      }
+
+      function fetchJson(path, token) {
+        var headers = {
+          'Content-Type': 'application/json'
+        };
+
+        if (token) {
+          headers['Authorization'] = 'Bearer ' + token;
+        }
+
+        return fetch(API_URL + path, {
+          method: 'GET',
+          headers: headers
         }).then(function (res) {
-          return res.json();
-        });
-      }
+          log('HTTP ' + res.status + ' ' + path);
 
-      function extractContents(devices) {
-        if (!devices || !deviceId) return [];
+          return res.text().then(function (text) {
+            var data = null;
 
-        var device = devices.data.find(function (d) {
-          return String(d.id) === String(deviceId);
-        });
+            try {
+              data = text ? JSON.parse(text) : null;
+            } catch (e) {
+              data = text;
+            }
 
-        if (!device || !device.playlists) return [];
+            if (!res.ok) {
+              log('response error body: ' + String(text));
+              throw new Error('HTTP_' + res.status);
+            }
 
-        return device.playlists.flatMap(function (playlist) {
-          return playlist.contents.map(function (content) {
-            return {
-              ...content,
-              duration: playlist.duration
-            };
+            return data;
           });
         });
       }
 
-      function playNext() {
-        if (!contents.length) {
-          log('콘텐츠 없음');
+      function fetchDevices() {
+        return fetchJson('/digital_board/devices', getToken());
+      }
+
+      function getDevicesArray(res) {
+        if (res && res.data && res.data.length) return res.data;
+        if (res && res.devices && res.devices.length) return res.devices;
+        if (res && res.data && res.data.data && res.data.data.length) return res.data.data;
+        return [];
+      }
+
+      function getContentUrl(content) {
+        if (!content) return '';
+
+        if (content.file_url) return content.file_url;
+        if (content.url) return content.url;
+        if (content.path) return content.path;
+
+        if (content.file && content.file.url) return content.file.url;
+
+        if (
+          content.file &&
+          content.file.data &&
+          content.file.data.attributes &&
+          content.file.data.attributes.url
+        ) {
+          return content.file.data.attributes.url;
+        }
+
+        if (
+          content.attributes &&
+          content.attributes.file &&
+          content.attributes.file.data &&
+          content.attributes.file.data.attributes &&
+          content.attributes.file.data.attributes.url
+        ) {
+          return content.attributes.file.data.attributes.url;
+        }
+
+        return '';
+      }
+
+      function getContentType(content, url) {
+        var rawType =
+          (content && content.type) ||
+          (content && content.content_type) ||
+          (content && content.mime) ||
+          '';
+
+        rawType = String(rawType).toLowerCase();
+        url = String(url || '').toLowerCase();
+
+        if (rawType.indexOf('video') >= 0 || rawType === 'movie') return 'video';
+        if (rawType.indexOf('image') >= 0) return 'image';
+
+        if (url.indexOf('.mp4') >= 0 || url.indexOf('.mov') >= 0 || url.indexOf('.webm') >= 0) {
+          return 'video';
+        }
+
+        if (
+          url.indexOf('.jpg') >= 0 ||
+          url.indexOf('.jpeg') >= 0 ||
+          url.indexOf('.png') >= 0 ||
+          url.indexOf('.webp') >= 0 ||
+          url.indexOf('.gif') >= 0
+        ) {
+          return 'image';
+        }
+
+        return 'image';
+      }
+
+      function extractContents(res) {
+        var devices = getDevicesArray(res);
+
+        if (!devices.length || !deviceId) {
+          return [];
+        }
+
+        var matchedDevice = null;
+
+        for (var i = 0; i < devices.length; i++) {
+          if (String(devices[i].id) === String(deviceId)) {
+            matchedDevice = devices[i];
+            break;
+          }
+        }
+
+        if (!matchedDevice || !matchedDevice.playlists) {
+          return [];
+        }
+
+        var result = [];
+
+        for (var p = 0; p < matchedDevice.playlists.length; p++) {
+          var playlist = matchedDevice.playlists[p];
+          var playlistDuration = Number(playlist.duration || 5);
+          var playlistContents = playlist.contents || [];
+
+          for (var c = 0; c < playlistContents.length; c++) {
+            var item = playlistContents[c];
+            item.duration = Number(item.duration || playlistDuration || 5);
+            result.push(item);
+          }
+        }
+
+        return result;
+      }
+
+      function refreshContents(reason) {
+        if (isRefreshing) {
+          log('이미 갱신 중이라 skip');
           return;
+        }
+
+        isRefreshing = true;
+        showLoading(true);
+
+        log('playlist 갱신: ' + (reason || 'manual'));
+
+        fetchDevices()
+          .then(function (res) {
+            var nextContents = extractContents(res);
+
+            contents = nextContents;
+            currentIndex = 0;
+
+            log('contents count: ' + contents.length);
+
+            if (!contents.length) {
+              hidePlayers();
+              showEmpty(true);
+              return;
+            }
+
+            showEmpty(false);
+            playCurrent();
+          })
+          .catch(function (err) {
+            log('refresh error: ' + String(err));
+
+            if (!contents.length) {
+              showEmpty(true);
+            }
+          })
+          .then(function () {
+            isRefreshing = false;
+            showLoading(false);
+          });
+      }
+
+      function playCurrent() {
+        if (!contents.length) {
+          hidePlayers();
+          showEmpty(true);
+          return;
+        }
+
+        if (currentIndex >= contents.length) {
+          currentIndex = 0;
         }
 
         var item = contents[currentIndex];
+        var url = getContentUrl(item);
+        var type = getContentType(item, url);
 
-        log('재생: ' + JSON.stringify(item));
-
-        videoEl.pause();
-        videoEl.style.display = 'none';
-        imageEl.style.display = 'none';
-
-        var url = item.file_url || item.url;
+        log('play index ' + currentIndex + ' / type: ' + type + ' / url: ' + url);
 
         if (!url) {
-          next();
+          playNext();
           return;
         }
 
-        if (url.endsWith('.mp4')) {
+        hidePlayers();
+
+        if (type === 'video') {
           playVideo(url);
         } else {
-          playImage(url, item.duration || 5);
+          playImage(url, Number(item.duration || 5));
         }
       }
 
       function playVideo(url) {
-        videoEl.src = url;
         videoEl.style.display = 'block';
+        videoEl.src = url;
+        videoEl.muted = true;
+        videoEl.autoplay = true;
+        videoEl.playsInline = true;
 
-        videoEl.play().catch(function (e) {
-          log('video play error: ' + e);
-        });
+        videoEl.onended = function () {
+          log('video ended');
+          playNext();
+        };
 
-        videoEl.onended = next;
+        videoEl.onerror = function () {
+          log('video error');
+          playNext();
+        };
+
+        var playPromise = videoEl.play();
+
+        if (playPromise && typeof playPromise.then === 'function') {
+          playPromise.then(function () {
+            log('video playing');
+          }).catch(function (err) {
+            log('video play error: ' + String(err));
+            playNext();
+          });
+        }
       }
 
       function playImage(url, duration) {
+        imageEl.onload = function () {
+          log('image loaded');
+        };
+
+        imageEl.onerror = function () {
+          log('image error');
+          playNext();
+        };
+
         imageEl.src = url;
         imageEl.style.display = 'block';
 
-        setTimeout(next, duration * 1000);
+        imageTimer = setTimeout(function () {
+          playNext();
+        }, Math.max(1, duration) * 1000);
       }
 
-      function next() {
-        currentIndex = (currentIndex + 1) % contents.length;
-        playNext();
-      }
+      function playNext() {
+        if (!contents.length) return;
 
-      function refresh() {
-        log('playlist 갱신');
+        currentIndex = currentIndex + 1;
 
-        fetchDevices()
-          .then(function (res) {
-            contents = extractContents(res);
-            currentIndex = 0;
-            playNext();
-          })
-          .catch(function (err) {
-            log('fetch error: ' + err);
-          });
+        if (currentIndex >= contents.length) {
+          currentIndex = 0;
+        }
+
+        playCurrent();
       }
 
       function initPusher() {
         if (!deviceId) return;
 
-        log('Pusher 연결 시도...');
+        try {
+          log('Pusher 연결 시도');
 
-        var pusher = new Pusher(PUSHER_KEY, {
-          cluster: PUSHER_CLUSTER
-        });
+          pusherInstance = new Pusher(PUSHER_KEY, {
+            cluster: PUSHER_CLUSTER
+          });
 
-        var channelName = 'tv-control-' + deviceId;
+          var channelName = 'tv-control-' + deviceId;
+          var channel = pusherInstance.subscribe(channelName);
 
-        log('채널 구독: ' + channelName);
+          log('Pusher 채널 구독: ' + channelName);
 
-        var channel = pusher.subscribe(channelName);
+          channel.bind(PUSHER_EVENT, function (data) {
+            log('Pusher refresh 수신: ' + JSON.stringify(data || {}));
+            refreshContents('pusher');
+          });
 
-        channel.bind('refresh', function (data) {
-          log('Pusher refresh 이벤트 수신');
+          pusherInstance.connection.bind('connected', function () {
+            log('Pusher connected');
+          });
 
-          refresh();
+          pusherInstance.connection.bind('error', function (err) {
+            log('Pusher error: ' + JSON.stringify(err || {}));
+          });
+        } catch (e) {
+          log('Pusher init error: ' + String(e));
+        }
+      }
+
+      function initKeyEvents() {
+        document.addEventListener('keydown', function (e) {
+          if (e.keyCode === 10009) {
+            e.preventDefault();
+            log('뒤로가기 차단');
+            return false;
+          }
+
+          if (e.keyCode === 13) {
+            debugEl.className =
+              debugEl.className.indexOf('hidden') >= 0 ? 'debug' : 'debug hidden';
+          }
         });
       }
 
       function init() {
+        applyOrientationClass();
+        initKeyEvents();
+
         if (!deviceId) {
-          log('deviceId 없음 → 로그인으로 이동');
-          window.location.href = '/tv-login.html';
+          log('deviceId 없음 → 로그인 이동');
+
+          setTimeout(function () {
+            window.location.href = '/tv-login.html';
+          }, 500);
+
           return;
         }
 
-        refresh();
+        safeSet(KEYS.DEVICE_ID, deviceId);
+
+        log('deviceId: ' + deviceId);
+        log('token exists: ' + !!getToken());
+
+        refreshContents('init');
         initPusher();
 
-        setInterval(refresh, 60000); // fallback
+        refreshTimer = setInterval(function () {
+          refreshContents('interval');
+        }, 60000);
       }
+
+      window.addEventListener('resize', function () {
+        applyOrientationClass();
+      });
+
+      window.onerror = function (msg, src, line, col) {
+        log(
+          'window.onerror: ' +
+          String(msg) +
+          ' / ' +
+          String(src) +
+          ' / ' +
+          line +
+          ':' +
+          col
+        );
+      };
 
       init();
     })();
