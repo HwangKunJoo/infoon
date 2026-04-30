@@ -2,17 +2,16 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
-  <meta
-    name="viewport"
-    content="width=device-width, initial-scale=1.0"
-  />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>인포온 TV 로그인</title>
+
   <style>
     * {
       box-sizing: border-box;
     }
 
-    html, body {
+    html,
+    body {
       width: 100%;
       height: 100%;
       margin: 0;
@@ -38,7 +37,7 @@
     .card {
       background: #ffffff;
       border-radius: 24px;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
       padding: 36px;
     }
 
@@ -84,7 +83,7 @@
       border-radius: 14px;
       font-size: 24px;
       outline: none;
-      background: #fff;
+      background: #ffffff;
     }
 
     .input:focus,
@@ -106,7 +105,7 @@
 
     .btn-primary {
       background: #fb923c;
-      color: white;
+      color: #ffffff;
       margin-top: 8px;
     }
 
@@ -114,6 +113,11 @@
       background: #e5e7eb;
       color: #374151;
       margin-top: 12px;
+    }
+
+    .btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
     }
 
     .error {
@@ -150,12 +154,9 @@
       color: #4b5563;
       word-break: break-word;
     }
-
-    .hidden {
-      display: none;
-    }
   </style>
 </head>
+
 <body>
   <div class="container">
     <div class="card">
@@ -216,7 +217,9 @@
 
       function setError(text) {
         errorEl.textContent = text || '';
-        if (text) log('[ERROR] ' + text);
+        if (text) {
+          log('[ERROR] ' + text);
+        }
       }
 
       function log(text) {
@@ -297,7 +300,10 @@
         var headers = finalOptions.headers || {};
 
         headers['Content-Type'] = 'application/json';
-        if (token) headers['Authorization'] = 'Bearer ' + token;
+
+        if (token) {
+          headers['Authorization'] = 'Bearer ' + token;
+        }
 
         return fetch(BASE_URL + path, {
           method: finalOptions.method || 'GET',
@@ -305,10 +311,23 @@
           body: finalOptions.body
         }).then(function (res) {
           log('HTTP ' + res.status + ' ' + path);
-          if (!res.ok) {
-            throw new Error('HTTP_' + res.status);
-          }
-          return res.json();
+
+          return res.text().then(function (text) {
+            var data = null;
+
+            try {
+              data = text ? JSON.parse(text) : null;
+            } catch (e) {
+              data = text;
+            }
+
+            if (!res.ok) {
+              log('response error body: ' + String(text));
+              throw new Error('HTTP_' + res.status);
+            }
+
+            return data;
+          });
         });
       }
 
@@ -345,6 +364,7 @@
             typeof window.webapis.productinfo.getModelCode === 'function'
           ) {
             var modelCode = window.webapis.productinfo.getModelCode();
+
             return {
               modelId: modelCode,
               modelName: modelCode
@@ -356,14 +376,48 @@
 
         return {
           modelId: 'web',
-          modelName: 'web_player'
+          modelName: navigator.userAgent || 'web_player'
         };
+      }
+
+      function getUserValue(user, key) {
+        if (!user) return '';
+
+        if (user[key]) return user[key];
+
+        if (user.attributes && user.attributes[key]) {
+          return user.attributes[key];
+        }
+
+        return '';
+      }
+
+      function getDeviceIdFromRegisterResponse(res) {
+        if (res && res.data && res.data.data && res.data.data.id) {
+          return String(res.data.data.id);
+        }
+
+        if (res && res.data && res.data.id) {
+          return String(res.data.id);
+        }
+
+        if (res && res.data && res.data.device && res.data.device.id) {
+          return String(res.data.device.id);
+        }
+
+        if (res && res.data && res.data.attributes && res.data.attributes.id) {
+          return String(res.data.attributes.id);
+        }
+
+        return '';
       }
 
       function redirectToPlay(deviceId) {
         setStatus('재생 화면으로 이동 중...');
+
         setTimeout(function () {
-          window.location.href = WEB_BASE_URL + '/player/play?deviceId=' + encodeURIComponent(deviceId);
+          window.location.href =
+            WEB_BASE_URL + '/tv-play.html?deviceId=' + encodeURIComponent(deviceId);
         }, 300);
       }
 
@@ -379,11 +433,19 @@
         var info = getDeviceHardwareInfo();
         var orientation = window.innerWidth >= window.innerHeight ? 'landscape' : 'portrait';
 
+        var organization = getUserValue(user, 'organization');
+        var organizationType = getUserValue(user, 'organization_type');
+        var userId = getUserValue(user, 'id');
+
         setStatus('기기 등록 중...');
+
         log('register payload: ' + JSON.stringify({
           modelId: info.modelId,
           modelName: info.modelName,
-          orientation: orientation
+          orientation: orientation,
+          organization: organization,
+          organizationType: organizationType,
+          userId: userId
         }));
 
         return withTimeout(
@@ -391,25 +453,60 @@
             modelId: info.modelId,
             modelName: info.modelName,
             orientation: orientation,
-            organization: user.organization,
-            organization_type: user.organization_type,
-            userId: user.id
+            organization: organization,
+            organization_type: organizationType,
+            userId: Number(userId)
           }),
           7000,
           'DEVICE_REGISTER'
         ).then(function (res) {
-          var deviceId = String(res.data.id);
+          var deviceId = getDeviceIdFromRegisterResponse(res);
+
+          if (!deviceId) {
+            log('register response: ' + JSON.stringify(res));
+            throw new Error('DEVICE_ID_NOT_FOUND');
+          }
+
           safeSet(KEYS.DEVICE_ID, deviceId);
           log('device registered: ' + deviceId);
           redirectToPlay(deviceId);
         });
       }
 
+      function getLoginToken(res) {
+        if (res && res.data && res.data.token) {
+          return res.data.token;
+        }
+
+        if (res && res.token) {
+          return res.token;
+        }
+
+        return '';
+      }
+
+      function getLoginUser(res) {
+        if (res && res.data && res.data.user) {
+          return res.data.user;
+        }
+
+        if (res && res.user) {
+          return res.user;
+        }
+
+        return null;
+      }
+
       function saveAuth(token, email, password, user) {
         safeSet(KEYS.TOKEN, token);
         safeSet(KEYS.EMAIL, email);
         safeSet(KEYS.PASSWORD, password);
-        safeSet(KEYS.USER, JSON.stringify(user));
+        safeSet(KEYS.USER, JSON.stringify(user || {}));
+      }
+
+      function resetLoginButton() {
+        loginBtnEl.disabled = false;
+        loginBtnEl.textContent = '로그인';
       }
 
       function tryAutoLogin() {
@@ -433,18 +530,19 @@
           7000,
           'AUTO_LOGIN'
         ).then(function (res) {
-          if (!res || !res.data || !res.data.token) {
+          var token = getLoginToken(res);
+          var user = getLoginUser(res);
+
+          if (!token || !user) {
             clearStorage();
             setStatus('자동 로그인 실패');
             setError('저장된 로그인 정보가 유효하지 않습니다.');
             return false;
           }
 
-          var token = res.data.token;
-          var user = res.data.user;
-
           saveAuth(token, savedEmail, savedPassword, user);
           setStatus('자동 로그인 성공');
+
           return registerAndRedirect(token, user).then(function () {
             return true;
           });
@@ -482,24 +580,25 @@
           7000,
           'MANUAL_LOGIN'
         ).then(function (res) {
-          if (!res || !res.data || !res.data.token) {
+          var token = getLoginToken(res);
+          var user = getLoginUser(res);
+
+          if (!token || !user) {
             setError('이메일 또는 비밀번호를 확인해주세요');
+            resetLoginButton();
             return;
           }
-
-          var token = res.data.token;
-          var user = res.data.user;
 
           saveAuth(token, email, password, user);
           setStatus('로그인 성공');
 
-          return registerAndRedirect(token, user);
+          return registerAndRedirect(token, user).then(function () {
+            resetLoginButton();
+          });
         }).catch(function (err) {
           setError('로그인 중 오류가 발생했습니다.');
           log('manual login error: ' + String(err));
-        }).finally(function () {
-          loginBtnEl.disabled = false;
-          loginBtnEl.textContent = '로그인';
+          resetLoginButton();
         });
       }
 
@@ -532,10 +631,20 @@
       });
 
       window.onerror = function (msg, src, line, col) {
-        log('window.onerror: ' + String(msg) + ' / ' + String(src) + ' / ' + line + ':' + col);
+        log(
+          'window.onerror: ' +
+          String(msg) +
+          ' / ' +
+          String(src) +
+          ' / ' +
+          line +
+          ':' +
+          col
+        );
       };
 
       setStatus('초기화 완료');
+
       tryAutoLogin().then(function (done) {
         if (!done) {
           emailEl.focus();

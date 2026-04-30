@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>TV Player</title>
+
+  <script src="https://js.pusher.com/8.4.0/pusher.min.js"></script>
+
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: black;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    video, img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      background: black;
+    }
+
+    .debug {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      max-height: 200px;
+      overflow: auto;
+      background: rgba(0,0,0,0.6);
+      color: #0f0;
+      font-size: 14px;
+      padding: 10px;
+    }
+  </style>
+</head>
+
+<body>
+  <video id="video" autoplay muted playsinline></video>
+  <img id="image" style="display:none;" />
+
+  <div id="debug" class="debug"></div>
+
+  <script>
+    (function () {
+      var API_URL = 'https://api.onldo.life/api';
+
+      var PUSHER_KEY = 'a707a1d344893077c43d';
+      var PUSHER_CLUSTER = 'ap3';
+
+      var videoEl = document.getElementById('video');
+      var imageEl = document.getElementById('image');
+      var debugEl = document.getElementById('debug');
+
+      var deviceId = getDeviceId();
+
+      var contents = [];
+      var currentIndex = 0;
+
+      function log(text) {
+        console.log('[PLAY]', text);
+
+        var div = document.createElement('div');
+        div.textContent = text;
+        debugEl.appendChild(div);
+        debugEl.scrollTop = debugEl.scrollHeight;
+      }
+
+      function getDeviceId() {
+        var params = new URLSearchParams(window.location.search);
+        return params.get('deviceId');
+      }
+
+      function getToken() {
+        return localStorage.getItem('player_token');
+      }
+
+      function fetchDevices() {
+        return fetch(API_URL + '/digital_board/devices', {
+          headers: {
+            Authorization: 'Bearer ' + getToken()
+          }
+        }).then(function (res) {
+          return res.json();
+        });
+      }
+
+      function extractContents(devices) {
+        if (!devices || !deviceId) return [];
+
+        var device = devices.data.find(function (d) {
+          return String(d.id) === String(deviceId);
+        });
+
+        if (!device || !device.playlists) return [];
+
+        return device.playlists.flatMap(function (playlist) {
+          return playlist.contents.map(function (content) {
+            return {
+              ...content,
+              duration: playlist.duration
+            };
+          });
+        });
+      }
+
+      function playNext() {
+        if (!contents.length) {
+          log('콘텐츠 없음');
+          return;
+        }
+
+        var item = contents[currentIndex];
+
+        log('재생: ' + JSON.stringify(item));
+
+        videoEl.pause();
+        videoEl.style.display = 'none';
+        imageEl.style.display = 'none';
+
+        var url = item.file_url || item.url;
+
+        if (!url) {
+          next();
+          return;
+        }
+
+        if (url.endsWith('.mp4')) {
+          playVideo(url);
+        } else {
+          playImage(url, item.duration || 5);
+        }
+      }
+
+      function playVideo(url) {
+        videoEl.src = url;
+        videoEl.style.display = 'block';
+
+        videoEl.play().catch(function (e) {
+          log('video play error: ' + e);
+        });
+
+        videoEl.onended = next;
+      }
+
+      function playImage(url, duration) {
+        imageEl.src = url;
+        imageEl.style.display = 'block';
+
+        setTimeout(next, duration * 1000);
+      }
+
+      function next() {
+        currentIndex = (currentIndex + 1) % contents.length;
+        playNext();
+      }
+
+      function refresh() {
+        log('playlist 갱신');
+
+        fetchDevices()
+          .then(function (res) {
+            contents = extractContents(res);
+            currentIndex = 0;
+            playNext();
+          })
+          .catch(function (err) {
+            log('fetch error: ' + err);
+          });
+      }
+
+      function initPusher() {
+        if (!deviceId) return;
+
+        log('Pusher 연결 시도...');
+
+        var pusher = new Pusher(PUSHER_KEY, {
+          cluster: PUSHER_CLUSTER
+        });
+
+        var channelName = 'tv-control-' + deviceId;
+
+        log('채널 구독: ' + channelName);
+
+        var channel = pusher.subscribe(channelName);
+
+        channel.bind('refresh', function (data) {
+          log('Pusher refresh 이벤트 수신');
+
+          refresh();
+        });
+      }
+
+      function init() {
+        if (!deviceId) {
+          log('deviceId 없음 → 로그인으로 이동');
+          window.location.href = '/tv-login.html';
+          return;
+        }
+
+        refresh();
+        initPusher();
+
+        setInterval(refresh, 60000); // fallback
+      }
+
+      init();
+    })();
+  </script>
+</body>
+</html>
