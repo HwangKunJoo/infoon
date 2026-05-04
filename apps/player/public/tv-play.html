@@ -121,6 +121,40 @@
       font-size: 24px;
       padding: 16px 22px;
     }
+
+    .overlay {
+      position: absolute;
+      z-index: 18;
+      color: #fff;
+      display: none;
+      pointer-events: none;
+    }
+
+    body.landscape .overlay {
+      display: none;
+    }
+
+    body.portrait .overlay {
+      display: block;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      padding: 80px 56px 56px;
+      background: linear-gradient(to top, rgba(0, 0, 0, 0.82), rgba(0, 0, 0, 0));
+    }
+
+    .overlay-title {
+      font-size: 46px;
+      font-weight: 800;
+      line-height: 1.25;
+    }
+
+    .overlay-sub {
+      margin-top: 12px;
+      font-size: 28px;
+      line-height: 1.35;
+      color: rgba(255, 255, 255, 0.76);
+    }
   </style>
 </head>
 
@@ -135,6 +169,12 @@
     </div>
 
     <div id="loading" class="loading">갱신 중...</div>
+
+    <div id="overlay" class="overlay">
+      <div id="overlayTitle" class="overlay-title"></div>
+      <div id="overlaySub" class="overlay-sub"></div>
+    </div>
+
     <div id="debug" class="debug"></div>
   </div>
 
@@ -157,6 +197,8 @@
       var emptyEl = document.getElementById('empty');
       var loadingEl = document.getElementById('loading');
       var debugEl = document.getElementById('debug');
+      var overlayTitleEl = document.getElementById('overlayTitle');
+      var overlaySubEl = document.getElementById('overlaySub');
 
       var deviceId = getDeviceId();
       var contents = [];
@@ -378,6 +420,33 @@
         return 'image';
       }
 
+      function getContentText(content, key) {
+        if (!content) return '';
+
+        if (content[key]) return content[key];
+
+        if (content.attributes && content.attributes[key]) {
+          return content.attributes[key];
+        }
+
+        return '';
+      }
+
+      function updateOverlay(item) {
+        var title =
+          getContentText(item, 'title') ||
+          getContentText(item, 'name') ||
+          '';
+
+        var sub =
+          getContentText(item, 'description') ||
+          getContentText(item, 'desc') ||
+          '';
+
+        overlayTitleEl.textContent = title;
+        overlaySubEl.textContent = sub;
+      }
+
       function extractContents(res) {
         var devices = getDevicesArray(res);
 
@@ -437,6 +506,7 @@
 
             if (!contents.length) {
               hidePlayers();
+              updateOverlay(null);
               showEmpty(true);
               return;
             }
@@ -448,6 +518,7 @@
             log('refresh error: ' + String(err));
 
             if (!contents.length) {
+              updateOverlay(null);
               showEmpty(true);
             }
           })
@@ -460,6 +531,7 @@
       function playCurrent() {
         if (!contents.length) {
           hidePlayers();
+          updateOverlay(null);
           showEmpty(true);
           return;
         }
@@ -471,6 +543,8 @@
         var item = contents[currentIndex];
         var url = getContentUrl(item);
         var type = getContentType(item, url);
+
+        updateOverlay(item);
 
         log('play index ' + currentIndex + ' / type: ' + type + ' / url: ' + url);
 

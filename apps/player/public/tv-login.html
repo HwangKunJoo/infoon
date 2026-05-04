@@ -16,74 +16,51 @@
       height: 100%;
       margin: 0;
       padding: 0;
-      background: #f5f5f5;
       font-family: Arial, Helvetica, sans-serif;
       overflow: hidden;
+      color: #111827;
+      background: #f5f5f5;
     }
 
     body {
       display: flex;
-      align-items: center;
-      justify-content: center;
-      color: #111827;
     }
 
+    /* =========================
+       가로형 TV UI
+       ========================= */
     body.landscape {
+      align-items: center;
+      justify-content: center;
       background: #f5f5f5;
     }
 
-    body.portrait {
-      background: #f7f7f7;
-    }
-
-    .container {
+    body.landscape .container {
       width: 100%;
+      max-width: 720px;
       padding: 32px;
     }
 
-    body.landscape .container {
-      max-width: 720px;
-    }
-
-    body.portrait .container {
-      max-width: 860px;
-      padding: 48px;
-    }
-
-    .card {
+    body.landscape .card {
       background: #ffffff;
       border-radius: 24px;
       box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
       padding: 36px;
     }
 
-    body.portrait .card {
-      padding: 44px;
-      border-radius: 28px;
-    }
-
-    h1 {
+    body.landscape h1 {
       margin: 0 0 8px;
       font-size: 44px;
       font-weight: 700;
     }
 
-    body.portrait h1 {
-      font-size: 56px;
-    }
-
-    .sub {
+    body.landscape .sub {
       margin: 0 0 24px;
       font-size: 22px;
       color: #6b7280;
     }
 
-    body.portrait .sub {
-      font-size: 28px;
-      margin-bottom: 32px;
-    }
-
-    .status {
+    body.landscape .status {
       margin-bottom: 20px;
       padding: 14px 16px;
       border-radius: 12px;
@@ -93,21 +70,11 @@
       word-break: break-word;
     }
 
-    body.portrait .status {
-      font-size: 24px;
-      padding: 18px 20px;
-      margin-bottom: 28px;
-    }
-
-    .field {
+    body.landscape .field {
       margin-bottom: 18px;
     }
 
-    body.portrait .field {
-      margin-bottom: 24px;
-    }
-
-    .label {
+    body.landscape .label {
       display: block;
       margin-bottom: 8px;
       font-size: 20px;
@@ -115,12 +82,7 @@
       color: #374151;
     }
 
-    body.portrait .label {
-      font-size: 24px;
-      margin-bottom: 12px;
-    }
-
-    .input {
+    body.landscape .input {
       width: 100%;
       height: 68px;
       padding: 0 18px;
@@ -131,20 +93,7 @@
       background: #ffffff;
     }
 
-    body.portrait .input {
-      height: 82px;
-      font-size: 30px;
-      padding: 0 22px;
-      border-radius: 18px;
-    }
-
-    .input:focus,
-    .btn:focus {
-      border-color: #fb923c;
-      box-shadow: 0 0 0 4px rgba(251, 146, 60, 0.2);
-    }
-
-    .btn {
+    body.landscape .btn {
       width: 100%;
       height: 74px;
       border: none;
@@ -155,10 +104,166 @@
       outline: none;
     }
 
-    body.portrait .btn {
-      height: 88px;
+    body.landscape .error {
+      margin: 14px 0 0;
+      color: #dc2626;
+      font-size: 20px;
+      min-height: 28px;
+    }
+
+    body.landscape .debug {
+      margin-top: 24px;
+      padding-top: 20px;
+      border-top: 1px solid #e5e7eb;
+    }
+
+    body.landscape .debug-title {
+      margin: 0 0 10px;
+      font-size: 18px;
+      font-weight: 700;
+      color: #374151;
+    }
+
+    body.landscape .log-box {
+      max-height: 220px;
+      overflow: auto;
+      background: #f9fafb;
+      border-radius: 12px;
+      padding: 12px;
+    }
+
+    body.landscape .log-line {
+      margin: 0 0 6px;
+      font-size: 16px;
+      color: #4b5563;
+      word-break: break-word;
+    }
+
+    /* =========================
+       세로형 TV UI
+       ========================= */
+    body.portrait {
+      align-items: flex-start;
+      justify-content: center;
+      background: #f3f4f6;
+      padding-top: 11vh;
+    }
+
+    body.portrait .container {
+      width: 100%;
+      max-width: 900px;
+      padding: 56px;
+    }
+
+    body.portrait .card {
+      background: #ffffff;
+      border-radius: 36px;
+      box-shadow: 0 18px 50px rgba(0, 0, 0, 0.12);
+      padding: 56px;
+      min-height: 980px;
+    }
+
+    body.portrait h1 {
+      margin: 0 0 16px;
+      font-size: 68px;
+      font-weight: 800;
+      letter-spacing: -1px;
+    }
+
+    body.portrait .sub {
+      margin: 0 0 44px;
       font-size: 32px;
+      line-height: 1.35;
+      color: #6b7280;
+    }
+
+    body.portrait .status {
+      margin-bottom: 40px;
+      padding: 24px 28px;
+      border-radius: 22px;
+      background: #f3f4f6;
+      font-size: 30px;
+      line-height: 1.35;
+      color: #374151;
+      word-break: break-word;
+    }
+
+    body.portrait .field {
+      margin-bottom: 34px;
+    }
+
+    body.portrait .label {
+      display: block;
+      margin-bottom: 16px;
+      font-size: 30px;
+      font-weight: 700;
+      color: #374151;
+    }
+
+    body.portrait .input {
+      width: 100%;
+      height: 104px;
+      padding: 0 30px;
+      border: 3px solid #d1d5db;
+      border-radius: 24px;
+      font-size: 36px;
+      outline: none;
+      background: #ffffff;
+    }
+
+    body.portrait .btn {
+      width: 100%;
+      height: 108px;
+      border: none;
+      border-radius: 26px;
+      font-size: 38px;
+      font-weight: 800;
+      cursor: pointer;
+      outline: none;
+    }
+
+    body.portrait .error {
+      margin: 22px 0 0;
+      color: #dc2626;
+      font-size: 28px;
+      min-height: 40px;
+    }
+
+    body.portrait .debug {
+      margin-top: 40px;
+      padding-top: 32px;
+      border-top: 1px solid #e5e7eb;
+    }
+
+    body.portrait .debug-title {
+      margin: 0 0 16px;
+      font-size: 26px;
+      font-weight: 800;
+      color: #374151;
+    }
+
+    body.portrait .log-box {
+      max-height: 320px;
+      overflow: auto;
+      background: #f9fafb;
       border-radius: 20px;
+      padding: 20px;
+    }
+
+    body.portrait .log-line {
+      margin: 0 0 10px;
+      font-size: 22px;
+      color: #4b5563;
+      word-break: break-word;
+    }
+
+    /* =========================
+       공통
+       ========================= */
+    .input:focus,
+    .btn:focus {
+      border-color: #fb923c;
+      box-shadow: 0 0 0 5px rgba(251, 146, 60, 0.25);
     }
 
     .btn-primary {
@@ -170,65 +275,12 @@
     .btn-secondary {
       background: #e5e7eb;
       color: #374151;
-      margin-top: 12px;
+      margin-top: 14px;
     }
 
     .btn:disabled {
       opacity: 0.6;
       cursor: not-allowed;
-    }
-
-    .error {
-      margin: 14px 0 0;
-      color: #dc2626;
-      font-size: 20px;
-      min-height: 28px;
-    }
-
-    body.portrait .error {
-      font-size: 24px;
-      min-height: 34px;
-    }
-
-    .debug {
-      margin-top: 24px;
-      padding-top: 20px;
-      border-top: 1px solid #e5e7eb;
-    }
-
-    .debug-title {
-      margin: 0 0 10px;
-      font-size: 18px;
-      font-weight: 700;
-      color: #374151;
-    }
-
-    body.portrait .debug-title {
-      font-size: 22px;
-    }
-
-    .log-box {
-      max-height: 220px;
-      overflow: auto;
-      background: #f9fafb;
-      border-radius: 12px;
-      padding: 12px;
-    }
-
-    body.portrait .log-box {
-      max-height: 280px;
-      padding: 16px;
-    }
-
-    .log-line {
-      margin: 0 0 6px;
-      font-size: 16px;
-      color: #4b5563;
-      word-break: break-word;
-    }
-
-    body.portrait .log-line {
-      font-size: 18px;
     }
   </style>
 </head>
@@ -287,6 +339,26 @@
       var loginBtnEl = document.getElementById('loginBtn');
       var clearBtnEl = document.getElementById('clearBtn');
 
+      function safeGet(key) {
+        try {
+          return localStorage.getItem(key);
+        } catch (e) {
+          return null;
+        }
+      }
+
+      function safeSet(key, value) {
+        try {
+          localStorage.setItem(key, value);
+        } catch (e) {}
+      }
+
+      function safeRemove(key) {
+        try {
+          localStorage.removeItem(key);
+        } catch (e) {}
+      }
+
       function getOrientation() {
         return window.innerWidth >= window.innerHeight ? 'landscape' : 'portrait';
       }
@@ -294,11 +366,8 @@
       function applyOrientationClass() {
         var orientation = getOrientation();
 
-        document.body.className = document.body.className
-          .replace('landscape', '')
-          .replace('portrait', '');
-
-        document.body.className = document.body.className + ' ' + orientation;
+        document.body.className = '';
+        document.body.className = orientation;
 
         safeSet(KEYS.ORIENTATION, orientation);
         log('[ORIENTATION] ' + orientation);
@@ -330,30 +399,9 @@
         p.textContent = text;
         logBoxEl.appendChild(p);
         logBoxEl.scrollTop = logBoxEl.scrollHeight;
-      }
 
-      function safeGet(key) {
-        try {
-          return localStorage.getItem(key);
-        } catch (e) {
-          log('localStorage get error: ' + key + ' / ' + String(e));
-          return null;
-        }
-      }
-
-      function safeSet(key, value) {
-        try {
-          localStorage.setItem(key, value);
-        } catch (e) {
-          log('localStorage set error: ' + key + ' / ' + String(e));
-        }
-      }
-
-      function safeRemove(key) {
-        try {
-          localStorage.removeItem(key);
-        } catch (e) {
-          log('localStorage remove error: ' + key + ' / ' + String(e));
+        while (logBoxEl.children.length > 80) {
+          logBoxEl.removeChild(logBoxEl.children[0]);
         }
       }
 
@@ -502,10 +550,6 @@
 
         if (res && res.data && res.data.device && res.data.device.id) {
           return String(res.data.device.id);
-        }
-
-        if (res && res.data && res.data.attributes && res.data.attributes.id) {
-          return String(res.data.attributes.id);
         }
 
         return '';
@@ -736,6 +780,10 @@
         }
       });
 
+      window.addEventListener('resize', function () {
+        applyOrientationClass();
+      });
+
       window.onerror = function (msg, src, line, col) {
         log(
           'window.onerror: ' +
@@ -748,10 +796,6 @@
           col
         );
       };
-
-      window.addEventListener('resize', function () {
-        applyOrientationClass();
-      });
 
       applyOrientationClass();
       setStatus('초기화 완료');
