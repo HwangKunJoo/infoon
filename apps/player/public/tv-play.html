@@ -600,7 +600,7 @@ setTimeout(function () {
         }
 
         if (type === 'video') {
-          playVideo('https://www.w3schools.com/html/mov_bbb.mp4');
+          playVideo(url);
         } else {
           playImage(url, Number(item.duration || 5));
         }
@@ -632,7 +632,7 @@ setTimeout(function () {
   videoEl.setAttribute('playsinline', 'true');
   videoEl.setAttribute('webkit-playsinline', 'true');
 
-  videoEl.src = encodeURI(url);
+  videoEl.src = url;
 
   var hasStartedPlay = false;
 
@@ -692,10 +692,20 @@ function startPlay(label) {
   };
 
   videoEl.onerror = function () {
-    var code = videoEl.error ? videoEl.error.code : 'unknown';
-    log('video error code: ' + code);
-    playNext();
-  };
+  var err = videoEl.error || {};
+  var code = err.code || 'unknown';
+  var message = err.message || '';
+  
+  log('=== VIDEO ERROR ===');
+  log('code: ' + code);
+  log('message: ' + message);
+  log('src: ' + videoEl.src);
+  log('networkState: ' + videoEl.networkState);
+  log('readyState: ' + videoEl.readyState);
+  log('===================');
+  
+  playNext();
+};
 
   try {
     videoEl.load();
