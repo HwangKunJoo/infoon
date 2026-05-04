@@ -47,6 +47,13 @@
       height: 100%;
       background: #000;
       display: none;
+      opacity: 0;
+      transition: opacity 0.45s ease;
+    }
+
+    video.show,
+    img.show {
+      opacity: 1;
     }
 
     body.landscape video,
@@ -266,7 +273,7 @@
         document.body.className = document.body.className + ' ' + orientation;
         safeSet(KEYS.ORIENTATION, orientation);
 
-        log('[ORIENTATION] ' + orientation);
+        log('[ORIENTATION] ' + orientation + ' / ' + window.innerWidth + 'x' + window.innerHeight);
 
         return orientation;
       }
@@ -296,6 +303,35 @@
         emptyEl.style.display = show ? 'flex' : 'none';
       }
 
+      function showElement(el) {
+        if (!el) return;
+
+        el.style.display = 'block';
+        el.className = el.className.replace('show', '');
+
+        setTimeout(function () {
+          el.className = el.className + ' show';
+        }, 20);
+      }
+
+      function hideElement(el) {
+        if (!el) return;
+
+        el.className = el.className.replace('show', '');
+
+        setTimeout(function () {
+          if (el.className.indexOf('show') < 0) {
+            el.style.display = 'none';
+          }
+        }, 450);
+      }
+
+      function clearImageSource() {
+        try {
+          imageEl.removeAttribute('src');
+        } catch (e) {}
+      }
+
       function hidePlayers() {
         if (imageTimer) {
           clearTimeout(imageTimer);
@@ -306,12 +342,8 @@
           videoEl.pause();
         } catch (e) {}
 
-        videoEl.removeAttribute('src');
-        videoEl.load();
-
-        videoEl.style.display = 'none';
-        imageEl.style.display = 'none';
-        imageEl.removeAttribute('src');
+        hideElement(videoEl);
+        hideElement(imageEl);
       }
 
       function fetchJson(path, token) {
@@ -403,7 +435,12 @@
         if (rawType.indexOf('video') >= 0 || rawType === 'movie') return 'video';
         if (rawType.indexOf('image') >= 0) return 'image';
 
-        if (url.indexOf('.mp4') >= 0 || url.indexOf('.mov') >= 0 || url.indexOf('.webm') >= 0) {
+        if (
+          url.indexOf('.mp4') >= 0 ||
+          url.indexOf('.mov') >= 0 ||
+          url.indexOf('.webm') >= 0 ||
+          url.indexOf('.m4v') >= 0
+        ) {
           return 'video';
         }
 
@@ -475,7 +512,13 @@
           var playlistContents = playlist.contents || [];
 
           for (var c = 0; c < playlistContents.length; c++) {
-            var item = playlistContents[c];
+            var originalItem = playlistContents[c];
+            var item = {};
+
+            for (var key in originalItem) {
+              item[key] = originalItem[key];
+            }
+
             item.duration = Number(item.duration || playlistDuration || 5);
             result.push(item);
           }
@@ -518,6 +561,7 @@
             log('refresh error: ' + String(err));
 
             if (!contents.length) {
+              hidePlayers();
               updateOverlay(null);
               showEmpty(true);
             }
@@ -553,8 +597,6 @@
           return;
         }
 
-        hidePlayers();
-
         if (type === 'video') {
           playVideo(url);
         } else {
@@ -563,11 +605,54 @@
       }
 
       function playVideo(url) {
+        if (imageTimer) {
+          clearTimeout(imageTimer);
+          imageTimer = null;
+        }
+
+        clearImageSource();
+        hideElement(imageEl);
+
+        videoEl.onloadedmetadata = null;
+        videoEl.oncanplay = null;
+        videoEl.onloadeddata = null;
+        videoEl.onended = null;
+        videoEl.onerror = null;
+
+        videoEl.className = videoEl.className.replace('show', '');
         videoEl.style.display = 'block';
-        videoEl.src = url;
+
         videoEl.muted = true;
         videoEl.autoplay = true;
         videoEl.playsInline = true;
+        videoEl.setAttribute('playsinline', 'true');
+        videoEl.setAttribute('webkit-playsinline', 'true');
+
+        videoEl.src = encodeURI(url);
+
+        videoEl.onloadedmetadata = function () {
+          log('video metadata loaded');
+        };
+
+        videoEl.oncanplay = function () {
+          log('video canplay');
+
+          var playPromise = videoEl.play();
+
+          if (playPromise && typeof playPromise.then === 'function') {
+            playPromise
+              .then(function () {
+                log('video playing');
+                showElement(videoEl);
+              })
+              .catch(function (err) {
+                log('video play error: ' + String(err));
+                playNext();
+              });
+          } else {
+            showElement(videoEl);
+          }
+        };
 
         videoEl.onended = function () {
           log('video ended');
@@ -575,38 +660,69 @@
         };
 
         videoEl.onerror = function () {
-          log('video error');
+          var code = videoEl.error ? videoEl.error.code : 'unknown';
+          log('video error code: ' + code);
           playNext();
         };
 
-        var playPromise = videoEl.play();
-
-        if (playPromise && typeof playPromise.then === 'function') {
-          playPromise.then(function () {
-            log('video playing');
-          }).catch(function (err) {
-            log('video play error: ' + String(err));
-            playNext();
-          });
+        try {
+          videoEl.load();
+        } catch (e) {
+          log('video load exception: ' + String(e));
+          playNext();
         }
       }
 
+      function preloadImage(url) {
+        return new Promise(function (resolve, reject) {
+          var img = new Image();
+
+          img.onload = function () {
+            resolve(url);
+          };
+
+          img.onerror = function () {
+            reject(new Error('IMAGE_PRELOAD_FAILED'));
+          };
+
+          img.src = url;
+        });
+      }
+
       function playImage(url, duration) {
-        imageEl.onload = function () {
-          log('image loaded');
-        };
+        if (imageTimer) {
+          clearTimeout(imageTimer);
+          imageTimer = null;
+        }
 
-        imageEl.onerror = function () {
-          log('image error');
-          playNext();
-        };
+        try {
+          videoEl.pause();
+        } catch (e) {}
 
-        imageEl.src = url;
-        imageEl.style.display = 'block';
+        hideElement(videoEl);
 
-        imageTimer = setTimeout(function () {
-          playNext();
-        }, Math.max(1, duration) * 1000);
+        preloadImage(url)
+          .then(function () {
+            imageEl.onload = function () {
+              log('image loaded');
+            };
+
+            imageEl.onerror = function () {
+              log('image error');
+              playNext();
+            };
+
+            imageEl.src = url;
+            showElement(imageEl);
+
+            imageTimer = setTimeout(function () {
+              playNext();
+            }, Math.max(1, duration) * 1000);
+          })
+          .catch(function (err) {
+            log('image preload error: ' + String(err));
+            playNext();
+          });
       }
 
       function playNext() {
@@ -645,11 +761,29 @@
             log('Pusher connected');
           });
 
+          pusherInstance.connection.bind('disconnected', function () {
+            log('Pusher disconnected');
+
+            try {
+              pusherInstance.disconnect();
+            } catch (e) {}
+
+            pusherInstance = null;
+
+            setTimeout(function () {
+              initPusher();
+            }, 3000);
+          });
+
           pusherInstance.connection.bind('error', function (err) {
             log('Pusher error: ' + JSON.stringify(err || {}));
           });
         } catch (e) {
           log('Pusher init error: ' + String(e));
+
+          setTimeout(function () {
+            initPusher();
+          }, 3000);
         }
       }
 
@@ -676,7 +810,11 @@
           log('deviceId 없음 → 로그인 이동');
 
           setTimeout(function () {
-            window.location.href = '/tv-login.html';
+            try {
+              window.location.replace('https://infoon.vercel.app/tv-login.html');
+            } catch (e) {
+              window.location.href = 'https://infoon.vercel.app/tv-login.html';
+            }
           }, 500);
 
           return;
@@ -710,6 +848,22 @@
           ':' +
           col
         );
+      };
+
+      window.onbeforeunload = function () {
+        if (refreshTimer) {
+          clearInterval(refreshTimer);
+        }
+
+        if (imageTimer) {
+          clearTimeout(imageTimer);
+        }
+
+        try {
+          if (pusherInstance) {
+            pusherInstance.disconnect();
+          }
+        } catch (e) {}
       };
 
       init();
