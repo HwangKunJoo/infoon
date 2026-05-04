@@ -307,17 +307,19 @@
         if (!el) return;
 
         el.style.display = 'block';
-        el.className = el.className.replace('show', '');
+        el.className = el.className.replace(/\bshow\b/g, '').replace(/\s+/g, ' ');
 
-        setTimeout(function () {
-          el.className = el.className + ' show';
-        }, 20);
+setTimeout(function () {
+  if (el.className.indexOf('show') < 0) {
+    el.className = el.className + ' show';
+  }
+}, 20);
       }
 
       function hideElement(el) {
         if (!el) return;
 
-        el.className = el.className.replace('show', '');
+        el.className = el.className.replace(/\bshow\b/g, '').replace(/\s+/g, ' ');
 
         setTimeout(function () {
           if (el.className.indexOf('show') < 0) {
@@ -605,73 +607,104 @@
       }
 
       function playVideo(url) {
-        if (imageTimer) {
-          clearTimeout(imageTimer);
-          imageTimer = null;
-        }
+  if (imageTimer) {
+    clearTimeout(imageTimer);
+    imageTimer = null;
+  }
 
-        clearImageSource();
-        hideElement(imageEl);
+  clearImageSource();
+  hideElement(imageEl);
 
-        videoEl.onloadedmetadata = null;
-        videoEl.oncanplay = null;
-        videoEl.onloadeddata = null;
-        videoEl.onended = null;
-        videoEl.onerror = null;
+  videoEl.onloadedmetadata = null;
+  videoEl.oncanplay = null;
+  videoEl.onplaying = null;
+  videoEl.onloadeddata = null;
+  videoEl.onended = null;
+  videoEl.onerror = null;
 
-        videoEl.className = videoEl.className.replace('show', '');
-        videoEl.style.display = 'block';
+  videoEl.className = videoEl.className.replace('show', '');
+  videoEl.style.display = 'block';
 
-        videoEl.muted = true;
-        videoEl.autoplay = true;
-        videoEl.playsInline = true;
-        videoEl.setAttribute('playsinline', 'true');
-        videoEl.setAttribute('webkit-playsinline', 'true');
+  videoEl.muted = true;
+  videoEl.autoplay = true;
+  videoEl.controls = false;
+  videoEl.playsInline = true;
+  videoEl.setAttribute('playsinline', 'true');
+  videoEl.setAttribute('webkit-playsinline', 'true');
 
-        videoEl.src = encodeURI(url);
+  videoEl.src = encodeURI(url);
 
-        videoEl.onloadedmetadata = function () {
-          log('video metadata loaded');
-        };
+  function startPlay(label) {
+    log('video startPlay: ' + label);
 
-        videoEl.oncanplay = function () {
-          log('video canplay');
+    showElement(videoEl);
 
-          var playPromise = videoEl.play();
+    try {
+      var playPromise = videoEl.play();
 
-          if (playPromise && typeof playPromise.then === 'function') {
-            playPromise
-              .then(function () {
-                log('video playing');
-                showElement(videoEl);
-              })
-              .catch(function (err) {
-                log('video play error: ' + String(err));
-                playNext();
-              });
-          } else {
+      if (playPromise && typeof playPromise.then === 'function') {
+        playPromise
+          .then(function () {
+            log('video playing');
             showElement(videoEl);
-          }
-        };
-
-        videoEl.onended = function () {
-          log('video ended');
-          playNext();
-        };
-
-        videoEl.onerror = function () {
-          var code = videoEl.error ? videoEl.error.code : 'unknown';
-          log('video error code: ' + code);
-          playNext();
-        };
-
-        try {
-          videoEl.load();
-        } catch (e) {
-          log('video load exception: ' + String(e));
-          playNext();
-        }
+          })
+          .catch(function (err) {
+            log('video play error: ' + String(err));
+          });
       }
+    } catch (e) {
+      log('video play exception: ' + String(e));
+    }
+  }
+
+  videoEl.onloadedmetadata = function () {
+    log('video metadata loaded');
+    startPlay('metadata');
+  };
+
+  videoEl.onloadeddata = function () {
+    log('video loadeddata');
+    showElement(videoEl);
+  };
+
+  videoEl.oncanplay = function () {
+    log('video canplay');
+    startPlay('canplay');
+  };
+
+  videoEl.onplaying = function () {
+    log('video onplaying');
+    showElement(videoEl);
+  };
+
+  videoEl.onended = function () {
+    log('video ended');
+    playNext();
+  };
+
+  videoEl.onerror = function () {
+    var code = videoEl.error ? videoEl.error.code : 'unknown';
+    log('video error code: ' + code);
+    playNext();
+  };
+
+  try {
+    videoEl.load();
+  } catch (e) {
+    log('video load exception: ' + String(e));
+    playNext();
+  }
+
+  setTimeout(function () {
+    if (videoEl.paused) {
+      log('video still paused after 2s, retry');
+      startPlay('timeout');
+    } else {
+      log('video not paused after 2s');
+      showElement(videoEl);
+    }
+  }, 2000);
+}
 
       function preloadImage(url) {
         return new Promise(function (resolve, reject) {
