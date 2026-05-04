@@ -3,7 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>인포온 TV 로그인</title>
+  <title>인포온 TV 플레이어</title>
+
+  <script src="https://js.pusher.com/8.4.0/pusher.min.js"></script>
 
   <style>
     * {
@@ -16,328 +18,202 @@
       height: 100%;
       margin: 0;
       padding: 0;
-      font-family: Arial, Helvetica, sans-serif;
+      background: #000;
       overflow: hidden;
-      color: #111827;
-      background: #f5f5f5;
+      font-family: Arial, Helvetica, sans-serif;
     }
 
-    body {
-      display: flex;
+    body.landscape,
+    body.portrait {
+      background: #000;
     }
 
-    /* =========================
-       가로형 TV UI
-       ========================= */
-    body.landscape {
+    #stage {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      background: #000;
+      overflow: hidden;
+    }
+
+    video,
+    img {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      background: #000;
+      display: none;
+      opacity: 0;
+      transition: opacity 0.45s ease;
+    }
+
+    video.show,
+    img.show {
+      opacity: 1;
+    }
+
+    body.landscape video,
+    body.landscape img {
+      object-fit: contain;
+    }
+
+    body.portrait video,
+    body.portrait img {
+      object-fit: cover;
+    }
+
+    .empty {
+      position: absolute;
+      inset: 0;
+      display: none;
       align-items: center;
       justify-content: center;
-      background: #f5f5f5;
+      padding: 40px;
+      background: #111;
+      color: #fff;
+      text-align: center;
+      font-size: 34px;
+      line-height: 1.4;
+      z-index: 10;
     }
 
-    body.landscape .container {
-      width: 100%;
-      max-width: 720px;
-      padding: 32px;
-    }
-
-    body.landscape .card {
-      background: #ffffff;
-      border-radius: 24px;
-      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
-      padding: 36px;
-    }
-
-    body.landscape h1 {
-      margin: 0 0 8px;
+    body.portrait .empty {
       font-size: 44px;
-      font-weight: 700;
+      padding: 64px;
     }
 
-    body.landscape .sub {
-      margin: 0 0 24px;
-      font-size: 22px;
-      color: #6b7280;
-    }
-
-    body.landscape .status {
-      margin-bottom: 20px;
-      padding: 14px 16px;
-      border-radius: 12px;
-      background: #f3f4f6;
-      font-size: 20px;
-      color: #374151;
-      word-break: break-word;
-    }
-
-    body.landscape .field {
-      margin-bottom: 18px;
-    }
-
-    body.landscape .label {
-      display: block;
-      margin-bottom: 8px;
-      font-size: 20px;
-      font-weight: 600;
-      color: #374151;
-    }
-
-    body.landscape .input {
-      width: 100%;
-      height: 68px;
-      padding: 0 18px;
-      border: 2px solid #d1d5db;
-      border-radius: 14px;
-      font-size: 24px;
-      outline: none;
-      background: #ffffff;
-    }
-
-    body.landscape .btn {
-      width: 100%;
-      height: 74px;
-      border: none;
-      border-radius: 16px;
-      font-size: 26px;
-      font-weight: 700;
-      cursor: pointer;
-      outline: none;
-    }
-
-    body.landscape .error {
-      margin: 14px 0 0;
-      color: #dc2626;
-      font-size: 20px;
-      min-height: 28px;
-    }
-
-    body.landscape .debug {
-      margin-top: 24px;
-      padding-top: 20px;
-      border-top: 1px solid #e5e7eb;
-    }
-
-    body.landscape .debug-title {
-      margin: 0 0 10px;
+    .loading {
+      position: absolute;
+      right: 24px;
+      top: 24px;
+      z-index: 20;
+      display: none;
+      padding: 12px 16px;
+      border-radius: 999px;
+      background: rgba(0, 0, 0, 0.58);
+      color: #fff;
       font-size: 18px;
-      font-weight: 700;
-      color: #374151;
     }
 
-    body.landscape .log-box {
-      max-height: 220px;
-      overflow: auto;
-      background: #f9fafb;
-      border-radius: 12px;
-      padding: 12px;
+    body.portrait .loading {
+      right: 32px;
+      top: 32px;
+      font-size: 24px;
+      padding: 16px 22px;
     }
 
-    body.landscape .log-line {
-      margin: 0 0 6px;
-      font-size: 16px;
-      color: #4b5563;
-      word-break: break-word;
+    .overlay {
+      position: absolute;
+      z-index: 18;
+      color: #fff;
+      display: none;
+      pointer-events: none;
     }
 
-    /* =========================
-       세로형 TV UI
-       ========================= */
-    body.portrait {
-      align-items: flex-start;
-      justify-content: center;
-      background: #f3f4f6;
-      padding-top: 11vh;
+    body.landscape .overlay {
+      display: none;
     }
 
-    body.portrait .container {
-      width: 100%;
-      max-width: 900px;
-      padding: 56px;
-    }
-
-    body.portrait .card {
-      background: #ffffff;
-      border-radius: 36px;
-      box-shadow: 0 18px 50px rgba(0, 0, 0, 0.12);
-      padding: 56px;
-      min-height: 980px;
-    }
-
-    body.portrait h1 {
-      margin: 0 0 16px;
-      font-size: 68px;
-      font-weight: 800;
-      letter-spacing: -1px;
-    }
-
-    body.portrait .sub {
-      margin: 0 0 44px;
-      font-size: 32px;
-      line-height: 1.35;
-      color: #6b7280;
-    }
-
-    body.portrait .status {
-      margin-bottom: 40px;
-      padding: 24px 28px;
-      border-radius: 22px;
-      background: #f3f4f6;
-      font-size: 30px;
-      line-height: 1.35;
-      color: #374151;
-      word-break: break-word;
-    }
-
-    body.portrait .field {
-      margin-bottom: 34px;
-    }
-
-    body.portrait .label {
+    body.portrait .overlay {
       display: block;
-      margin-bottom: 16px;
-      font-size: 30px;
-      font-weight: 700;
-      color: #374151;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      padding: 80px 56px 56px;
+      background: linear-gradient(to top, rgba(0, 0, 0, 0.82), rgba(0, 0, 0, 0));
     }
 
-    body.portrait .input {
-      width: 100%;
-      height: 104px;
-      padding: 0 30px;
-      border: 3px solid #d1d5db;
-      border-radius: 24px;
-      font-size: 36px;
-      outline: none;
-      background: #ffffff;
-    }
-
-    body.portrait .btn {
-      width: 100%;
-      height: 108px;
-      border: none;
-      border-radius: 26px;
-      font-size: 38px;
+    .overlay-title {
+      font-size: 46px;
       font-weight: 800;
-      cursor: pointer;
-      outline: none;
+      line-height: 1.25;
     }
 
-    body.portrait .error {
-      margin: 22px 0 0;
-      color: #dc2626;
+    .overlay-sub {
+      margin-top: 12px;
       font-size: 28px;
-      min-height: 40px;
+      line-height: 1.35;
+      color: rgba(255, 255, 255, 0.76);
+    }
+
+    .debug {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      max-height: 180px;
+      overflow: auto;
+      background: rgba(0, 0, 0, 0.62);
+      color: #39ff14;
+      font-size: 14px;
+      padding: 10px;
+      z-index: 30;
     }
 
     body.portrait .debug {
-      margin-top: 40px;
-      padding-top: 32px;
-      border-top: 1px solid #e5e7eb;
+      max-height: 260px;
+      font-size: 18px;
+      padding: 14px;
     }
 
-    body.portrait .debug-title {
-      margin: 0 0 16px;
-      font-size: 26px;
-      font-weight: 800;
-      color: #374151;
-    }
-
-    body.portrait .log-box {
-      max-height: 320px;
-      overflow: auto;
-      background: #f9fafb;
-      border-radius: 20px;
-      padding: 20px;
-    }
-
-    body.portrait .log-line {
-      margin: 0 0 10px;
-      font-size: 22px;
-      color: #4b5563;
-      word-break: break-word;
-    }
-
-    /* =========================
-       공통
-       ========================= */
-    .input:focus,
-    .btn:focus {
-      border-color: #fb923c;
-      box-shadow: 0 0 0 5px rgba(251, 146, 60, 0.25);
-    }
-
-    .btn-primary {
-      background: #fb923c;
-      color: #ffffff;
-      margin-top: 8px;
-    }
-
-    .btn-secondary {
-      background: #e5e7eb;
-      color: #374151;
-      margin-top: 14px;
-    }
-
-    .btn:disabled {
-      opacity: 0.6;
-      cursor: not-allowed;
+    .debug.hidden {
+      display: none;
     }
   </style>
 </head>
 
 <body>
-  <div class="container">
-    <div class="card">
-      <h1>로그인</h1>
-      <p class="sub">계정에 접속해 서비스를 시작하세요</p>
+  <div id="stage">
+    <video id="video" autoplay muted playsinline webkit-playsinline></video>
+    <img id="image" alt="" />
 
-      <div id="status" class="status">초기화 중...</div>
-
-      <div id="formArea">
-        <div class="field">
-          <label class="label" for="email">이메일</label>
-          <input id="email" class="input" type="email" placeholder="example@domain.com" />
-        </div>
-
-        <div class="field">
-          <label class="label" for="password">비밀번호</label>
-          <input id="password" class="input" type="password" placeholder="비밀번호" />
-        </div>
-
-        <button id="loginBtn" class="btn btn-primary">로그인</button>
-        <button id="clearBtn" class="btn btn-secondary">저장 정보 초기화</button>
-
-        <p id="error" class="error"></p>
-      </div>
-
-      <div class="debug">
-        <p class="debug-title">디버그 로그</p>
-        <div id="logBox" class="log-box"></div>
-      </div>
+    <div id="empty" class="empty">
+      재생할 콘텐츠가 없습니다.<br />
+      관리자 페이지에서 플레이리스트를 연결해주세요.
     </div>
+
+    <div id="loading" class="loading">갱신 중...</div>
+
+    <div id="overlay" class="overlay">
+      <div id="overlayTitle" class="overlay-title"></div>
+      <div id="overlaySub" class="overlay-sub"></div>
+    </div>
+
+    <div id="debug" class="debug"></div>
   </div>
 
   <script>
     (function () {
-      var BASE_URL = 'https://api.onldo.life/api';
-      var WEB_BASE_URL = 'https://infoon.vercel.app';
+      var API_URL = 'https://api.onldo.life/api';
+
+      var PUSHER_KEY = 'a707a1d344893077c43d';
+      var PUSHER_CLUSTER = 'ap3';
+      var PUSHER_EVENT = 'refresh';
 
       var KEYS = {
         TOKEN: 'player_token',
         DEVICE_ID: 'player_device_id',
-        EMAIL: 'player_email',
-        PASSWORD: 'player_password',
-        USER: 'player_user',
         ORIENTATION: 'player_orientation'
       };
 
-      var statusEl = document.getElementById('status');
-      var errorEl = document.getElementById('error');
-      var logBoxEl = document.getElementById('logBox');
-      var emailEl = document.getElementById('email');
-      var passwordEl = document.getElementById('password');
-      var loginBtnEl = document.getElementById('loginBtn');
-      var clearBtnEl = document.getElementById('clearBtn');
+      var videoEl = document.getElementById('video');
+      var imageEl = document.getElementById('image');
+      var emptyEl = document.getElementById('empty');
+      var loadingEl = document.getElementById('loading');
+      var debugEl = document.getElementById('debug');
+      var overlayTitleEl = document.getElementById('overlayTitle');
+      var overlaySubEl = document.getElementById('overlaySub');
+
+      var deviceId = getDeviceId();
+      var contents = [];
+      var currentIndex = 0;
+      var imageTimer = null;
+      var refreshTimer = null;
+      var pusherInstance = null;
+      var currentOrientation = null;
+      var isRefreshing = false;
+      var isPusherInitializing = false;
 
       function safeGet(key) {
         try {
@@ -353,109 +229,140 @@
         } catch (e) {}
       }
 
-      function safeRemove(key) {
-        try {
-          localStorage.removeItem(key);
-        } catch (e) {}
+      function getQueryParam(name) {
+        var query = window.location.search || '';
+        var key = name + '=';
+        var parts = query.replace('?', '').split('&');
+
+        for (var i = 0; i < parts.length; i++) {
+          if (parts[i].indexOf(key) === 0) {
+            return decodeURIComponent(parts[i].replace(key, ''));
+          }
+        }
+
+        return null;
+      }
+
+      function getDeviceId() {
+        return getQueryParam('deviceId') || safeGet(KEYS.DEVICE_ID);
+      }
+
+      function getToken() {
+        return safeGet(KEYS.TOKEN);
       }
 
       function getOrientation() {
+        var queryOrientation = getQueryParam('orientation');
+
+        if (queryOrientation === 'landscape' || queryOrientation === 'portrait') {
+          return queryOrientation;
+        }
+
         return window.innerWidth >= window.innerHeight ? 'landscape' : 'portrait';
       }
 
       function applyOrientationClass() {
         var orientation = getOrientation();
+        currentOrientation = orientation;
 
         document.body.className = '';
         document.body.className = orientation;
 
         safeSet(KEYS.ORIENTATION, orientation);
-        log('[ORIENTATION] ' + orientation);
+
+        log('[ORIENTATION] ' + orientation + ' / ' + window.innerWidth + 'x' + window.innerHeight);
 
         return orientation;
       }
 
-      function setStatus(text) {
-        statusEl.textContent = text;
-        log('[STATUS] ' + text);
-      }
-
-      function setError(text) {
-        errorEl.textContent = text || '';
-        if (text) {
-          log('[ERROR] ' + text);
-        }
-      }
-
       function log(text) {
         try {
-          console.log('[TV LOGIN]', text);
+          console.log('[TV PLAY]', text);
         } catch (e) {}
 
-        if (!logBoxEl) return;
+        if (!debugEl) return;
 
-        var p = document.createElement('p');
-        p.className = 'log-line';
-        p.textContent = text;
-        logBoxEl.appendChild(p);
-        logBoxEl.scrollTop = logBoxEl.scrollHeight;
+        var div = document.createElement('div');
+        div.textContent = text;
+        debugEl.appendChild(div);
+        debugEl.scrollTop = debugEl.scrollHeight;
 
-        while (logBoxEl.children.length > 80) {
-          logBoxEl.removeChild(logBoxEl.children[0]);
+        while (debugEl.children.length > 80) {
+          debugEl.removeChild(debugEl.children[0]);
         }
       }
 
-      function clearStorage() {
-        safeRemove(KEYS.TOKEN);
-        safeRemove(KEYS.DEVICE_ID);
-        safeRemove(KEYS.EMAIL);
-        safeRemove(KEYS.PASSWORD);
-        safeRemove(KEYS.USER);
-        safeRemove(KEYS.ORIENTATION);
+      function showLoading(show) {
+        loadingEl.style.display = show ? 'block' : 'none';
       }
 
-      function isInvalidValue(value) {
-        return !value || value === 'undefined' || value === 'null';
+      function showEmpty(show) {
+        emptyEl.style.display = show ? 'flex' : 'none';
       }
 
-      function withTimeout(promise, ms, label) {
-        return new Promise(function (resolve, reject) {
-          var done = false;
+      function showElement(el) {
+        if (!el) return;
 
-          var timer = setTimeout(function () {
-            if (done) return;
-            done = true;
-            reject(new Error(label + '_TIMEOUT'));
-          }, ms);
+        el.style.display = 'block';
 
-          promise.then(function (value) {
-            if (done) return;
-            done = true;
-            clearTimeout(timer);
-            resolve(value);
-          }).catch(function (err) {
-            if (done) return;
-            done = true;
-            clearTimeout(timer);
-            reject(err);
-          });
-        });
+        setTimeout(function () {
+          el.className = el.className.replace('show', '');
+          el.className = el.className + ' show';
+        }, 20);
       }
 
-      function fetchJson(path, token, options) {
-        var finalOptions = options || {};
-        var headers = finalOptions.headers || {};
+      function hideElement(el) {
+        if (!el) return;
 
-        headers['Content-Type'] = 'application/json';
+        el.className = el.className.replace('show', '');
+
+        setTimeout(function () {
+          if (el.className.indexOf('show') < 0) {
+            el.style.display = 'none';
+          }
+        }, 450);
+      }
+
+      function hidePlayers() {
+        if (imageTimer) {
+          clearTimeout(imageTimer);
+          imageTimer = null;
+        }
+
+        try {
+          videoEl.pause();
+        } catch (e) {}
+
+        hideElement(videoEl);
+        hideElement(imageEl);
+      }
+
+      function clearVideoSource() {
+        try {
+          videoEl.pause();
+          videoEl.removeAttribute('src');
+          videoEl.load();
+        } catch (e) {}
+      }
+
+      function clearImageSource() {
+        try {
+          imageEl.removeAttribute('src');
+        } catch (e) {}
+      }
+
+      function fetchJson(path, token) {
+        var headers = {
+          'Content-Type': 'application/json'
+        };
 
         if (token) {
           headers['Authorization'] = 'Bearer ' + token;
         }
 
-        return fetch(BASE_URL + path, {
-          method: finalOptions.method || 'GET',
-          headers: headers,
-          body: finalOptions.body
+        return fetch(API_URL + path, {
+          method: 'GET',
+          headers: headers
         }).then(function (res) {
           log('HTTP ' + res.status + ' ' + path);
 
@@ -478,307 +385,469 @@
         });
       }
 
-      function login(email, password) {
-        return fetchJson('/digital_board/auth/login', null, {
-          method: 'POST',
-          body: JSON.stringify({
-            email: email,
-            password: password
+      function fetchDevices() {
+        return fetchJson('/digital_board/devices', getToken());
+      }
+
+      function getDevicesArray(res) {
+        if (res && res.data && res.data.length) return res.data;
+        if (res && res.devices && res.devices.length) return res.devices;
+        if (res && res.data && res.data.data && res.data.data.length) return res.data.data;
+        return [];
+      }
+
+      function getContentUrl(content) {
+        if (!content) return '';
+
+        if (content.file_url) return content.file_url;
+        if (content.url) return content.url;
+        if (content.path) return content.path;
+
+        if (content.file && content.file.url) return content.file.url;
+
+        if (
+          content.file &&
+          content.file.data &&
+          content.file.data.attributes &&
+          content.file.data.attributes.url
+        ) {
+          return content.file.data.attributes.url;
+        }
+
+        if (
+          content.attributes &&
+          content.attributes.file &&
+          content.attributes.file.data &&
+          content.attributes.file.data.attributes &&
+          content.attributes.file.data.attributes.url
+        ) {
+          return content.attributes.file.data.attributes.url;
+        }
+
+        return '';
+      }
+
+      function getContentType(content, url) {
+        var rawType =
+          (content && content.type) ||
+          (content && content.content_type) ||
+          (content && content.mime) ||
+          '';
+
+        rawType = String(rawType).toLowerCase();
+        url = String(url || '').toLowerCase();
+
+        if (rawType.indexOf('video') >= 0 || rawType === 'movie') return 'video';
+        if (rawType.indexOf('image') >= 0) return 'image';
+
+        if (
+          url.indexOf('.mp4') >= 0 ||
+          url.indexOf('.mov') >= 0 ||
+          url.indexOf('.webm') >= 0 ||
+          url.indexOf('.m4v') >= 0
+        ) {
+          return 'video';
+        }
+
+        if (
+          url.indexOf('.jpg') >= 0 ||
+          url.indexOf('.jpeg') >= 0 ||
+          url.indexOf('.png') >= 0 ||
+          url.indexOf('.webp') >= 0 ||
+          url.indexOf('.gif') >= 0
+        ) {
+          return 'image';
+        }
+
+        return 'image';
+      }
+
+      function getContentText(content, key) {
+        if (!content) return '';
+
+        if (content[key]) return content[key];
+
+        if (content.attributes && content.attributes[key]) {
+          return content.attributes[key];
+        }
+
+        return '';
+      }
+
+      function updateOverlay(item) {
+        var title =
+          getContentText(item, 'title') ||
+          getContentText(item, 'name') ||
+          '';
+
+        var sub =
+          getContentText(item, 'description') ||
+          getContentText(item, 'desc') ||
+          '';
+
+        overlayTitleEl.textContent = title;
+        overlaySubEl.textContent = sub;
+      }
+
+      function extractContents(res) {
+        var devices = getDevicesArray(res);
+
+        if (!devices.length || !deviceId) {
+          return [];
+        }
+
+        var matchedDevice = null;
+
+        for (var i = 0; i < devices.length; i++) {
+          if (String(devices[i].id) === String(deviceId)) {
+            matchedDevice = devices[i];
+            break;
+          }
+        }
+
+        if (!matchedDevice || !matchedDevice.playlists) {
+          return [];
+        }
+
+        var result = [];
+
+        for (var p = 0; p < matchedDevice.playlists.length; p++) {
+          var playlist = matchedDevice.playlists[p];
+          var playlistDuration = Number(playlist.duration || 5);
+          var playlistContents = playlist.contents || [];
+
+          for (var c = 0; c < playlistContents.length; c++) {
+            var originalItem = playlistContents[c];
+            var item = {};
+
+            for (var key in originalItem) {
+              item[key] = originalItem[key];
+            }
+
+            item.duration = Number(item.duration || playlistDuration || 5);
+            result.push(item);
+          }
+        }
+
+        return result;
+      }
+
+      function refreshContents(reason) {
+        if (isRefreshing) {
+          log('이미 갱신 중이라 skip');
+          return;
+        }
+
+        isRefreshing = true;
+        showLoading(true);
+
+        log('playlist 갱신: ' + (reason || 'manual'));
+
+        fetchDevices()
+          .then(function (res) {
+            var nextContents = extractContents(res);
+
+            contents = nextContents;
+            currentIndex = 0;
+
+            log('contents count: ' + contents.length);
+
+            if (!contents.length) {
+              hidePlayers();
+              updateOverlay(null);
+              showEmpty(true);
+              return;
+            }
+
+            showEmpty(false);
+            playCurrent();
           })
+          .catch(function (err) {
+            log('refresh error: ' + String(err));
+
+            if (!contents.length) {
+              hidePlayers();
+              updateOverlay(null);
+              showEmpty(true);
+            }
+          })
+          .then(function () {
+            isRefreshing = false;
+            showLoading(false);
+          });
+      }
+
+      function playCurrent() {
+        if (!contents.length) {
+          hidePlayers();
+          updateOverlay(null);
+          showEmpty(true);
+          return;
+        }
+
+        if (currentIndex >= contents.length) {
+          currentIndex = 0;
+        }
+
+        var item = contents[currentIndex];
+        var url = getContentUrl(item);
+        var type = getContentType(item, url);
+
+        updateOverlay(item);
+
+        log('play index ' + currentIndex + ' / type: ' + type + ' / url: ' + url);
+
+        if (!url) {
+          playNext();
+          return;
+        }
+
+        if (type === 'video') {
+          playVideo(url);
+        } else {
+          playImage(url, Number(item.duration || 5));
+        }
+      }
+
+      function playVideo(url) {
+        if (imageTimer) {
+          clearTimeout(imageTimer);
+          imageTimer = null;
+        }
+
+        clearImageSource();
+
+        hideElement(imageEl);
+
+        videoEl.onended = null;
+        videoEl.onerror = null;
+
+        videoEl.src = url;
+        videoEl.muted = true;
+        videoEl.autoplay = true;
+        videoEl.playsInline = true;
+
+        videoEl.onloadeddata = function () {
+          showElement(videoEl);
+        };
+
+        videoEl.onended = function () {
+          log('video ended');
+          playNext();
+        };
+
+        videoEl.onerror = function () {
+          log('video error');
+          playNext();
+        };
+
+        var playPromise = videoEl.play();
+
+        if (playPromise && typeof playPromise.then === 'function') {
+          playPromise
+            .then(function () {
+              log('video playing');
+              showElement(videoEl);
+            })
+            .catch(function (err) {
+              log('video play error: ' + String(err));
+
+              try {
+                videoEl.muted = true;
+                var retryPromise = videoEl.play();
+
+                if (retryPromise && typeof retryPromise.then === 'function') {
+                  retryPromise
+                    .then(function () {
+                      log('video retry playing');
+                      showElement(videoEl);
+                    })
+                    .catch(function (retryErr) {
+                      log('video retry error: ' + String(retryErr));
+                      playNext();
+                    });
+                }
+              } catch (e) {
+                log('video retry exception: ' + String(e));
+                playNext();
+              }
+            });
+        } else {
+          showElement(videoEl);
+        }
+      }
+
+      function preloadImage(url) {
+        return new Promise(function (resolve, reject) {
+          var img = new Image();
+
+          img.onload = function () {
+            resolve(url);
+          };
+
+          img.onerror = function () {
+            reject(new Error('IMAGE_PRELOAD_FAILED'));
+          };
+
+          img.src = url;
         });
       }
 
-      function registerDevice(token, payload) {
-        return fetchJson('/digital_board/devices/register', token, {
-          method: 'POST',
-          body: JSON.stringify({
-            model_id: payload.modelId,
-            device_model_name: payload.modelName,
-            orientation: payload.orientation,
-            user_id: payload.userId,
-            organization: payload.organization,
-            organization_type: payload.organization_type
-          })
-        });
-      }
+      function playImage(url, duration) {
+        if (imageTimer) {
+          clearTimeout(imageTimer);
+          imageTimer = null;
+        }
 
-      function getDeviceHardwareInfo() {
         try {
-          if (
-            typeof window !== 'undefined' &&
-            window.webapis &&
-            window.webapis.productinfo &&
-            typeof window.webapis.productinfo.getModelCode === 'function'
-          ) {
-            var modelCode = window.webapis.productinfo.getModelCode();
+          videoEl.pause();
+        } catch (e) {}
 
-            return {
-              modelId: modelCode,
-              modelName: modelCode
+        hideElement(videoEl);
+
+        preloadImage(url)
+          .then(function () {
+            imageEl.onload = function () {
+              log('image loaded');
             };
+
+            imageEl.onerror = function () {
+              log('image error');
+              playNext();
+            };
+
+            imageEl.src = url;
+            showElement(imageEl);
+
+            imageTimer = setTimeout(function () {
+              playNext();
+            }, Math.max(1, duration) * 1000);
+          })
+          .catch(function (err) {
+            log('image preload error: ' + String(err));
+            playNext();
+          });
+      }
+
+      function playNext() {
+        if (!contents.length) return;
+
+        currentIndex = currentIndex + 1;
+
+        if (currentIndex >= contents.length) {
+          currentIndex = 0;
+        }
+
+        playCurrent();
+      }
+
+      function disconnectPusher() {
+        try {
+          if (pusherInstance) {
+            pusherInstance.disconnect();
+            pusherInstance = null;
           }
         } catch (e) {
-          log('getDeviceHardwareInfo error: ' + String(e));
+          log('Pusher disconnect error: ' + String(e));
         }
-
-        return {
-          modelId: 'web',
-          modelName: navigator.userAgent || 'web_player'
-        };
       }
 
-      function getUserValue(user, key) {
-        if (!user) return '';
+      function initPusher() {
+        if (!deviceId) return;
+        if (isPusherInitializing) return;
+        if (pusherInstance) return;
 
-        if (user[key]) return user[key];
+        isPusherInitializing = true;
 
-        if (user.attributes && user.attributes[key]) {
-          return user.attributes[key];
+        try {
+          log('Pusher 연결 시도');
+
+          pusherInstance = new Pusher(PUSHER_KEY, {
+            cluster: PUSHER_CLUSTER
+          });
+
+          var channelName = 'tv-control-' + deviceId;
+          var channel = pusherInstance.subscribe(channelName);
+
+          log('Pusher 채널 구독: ' + channelName);
+
+          channel.bind(PUSHER_EVENT, function (data) {
+            log('Pusher refresh 수신: ' + JSON.stringify(data || {}));
+            refreshContents('pusher');
+          });
+
+          pusherInstance.connection.bind('connected', function () {
+            isPusherInitializing = false;
+            log('Pusher connected');
+          });
+
+          pusherInstance.connection.bind('disconnected', function () {
+            isPusherInitializing = false;
+            log('Pusher disconnected');
+
+            pusherInstance = null;
+
+            setTimeout(function () {
+              initPusher();
+            }, 3000);
+          });
+
+          pusherInstance.connection.bind('error', function (err) {
+            isPusherInitializing = false;
+            log('Pusher error: ' + JSON.stringify(err || {}));
+          });
+        } catch (e) {
+          isPusherInitializing = false;
+          pusherInstance = null;
+          log('Pusher init error: ' + String(e));
+
+          setTimeout(function () {
+            initPusher();
+          }, 3000);
         }
-
-        return '';
       }
 
-      function getDeviceIdFromRegisterResponse(res) {
-        if (res && res.data && res.data.data && res.data.data.id) {
-          return String(res.data.data.id);
-        }
-
-        if (res && res.data && res.data.id) {
-          return String(res.data.id);
-        }
-
-        if (res && res.data && res.data.device && res.data.device.id) {
-          return String(res.data.device.id);
-        }
-
-        return '';
-      }
-
-      function redirectToPlay(deviceId) {
-        var orientation = getOrientation();
-
-        setStatus('재생 화면으로 이동 중...');
-
-        setTimeout(function () {
-          window.location.href =
-            WEB_BASE_URL +
-            '/tv-play.html?deviceId=' +
-            encodeURIComponent(deviceId) +
-            '&orientation=' +
-            encodeURIComponent(orientation);
-        }, 300);
-      }
-
-      function registerAndRedirect(token, user) {
-        var savedDeviceId = safeGet(KEYS.DEVICE_ID);
-
-        if (!isInvalidValue(savedDeviceId)) {
-          log('saved deviceId found: ' + savedDeviceId);
-          redirectToPlay(savedDeviceId);
-          return Promise.resolve();
-        }
-
-        var info = getDeviceHardwareInfo();
-        var orientation = applyOrientationClass();
-
-        var organization = getUserValue(user, 'organization');
-        var organizationType = getUserValue(user, 'organization_type');
-        var userId = getUserValue(user, 'id');
-
-        setStatus('기기 등록 중...');
-
-        log('register payload: ' + JSON.stringify({
-          modelId: info.modelId,
-          modelName: info.modelName,
-          orientation: orientation,
-          organization: organization,
-          organizationType: organizationType,
-          userId: userId
-        }));
-
-        return withTimeout(
-          registerDevice(token, {
-            modelId: info.modelId,
-            modelName: info.modelName,
-            orientation: orientation,
-            organization: organization,
-            organization_type: organizationType,
-            userId: Number(userId)
-          }),
-          7000,
-          'DEVICE_REGISTER'
-        ).then(function (res) {
-          var deviceId = getDeviceIdFromRegisterResponse(res);
-
-          if (!deviceId) {
-            log('register response: ' + JSON.stringify(res));
-            throw new Error('DEVICE_ID_NOT_FOUND');
-          }
-
-          safeSet(KEYS.DEVICE_ID, deviceId);
-          log('device registered: ' + deviceId);
-          redirectToPlay(deviceId);
-        });
-      }
-
-      function getLoginToken(res) {
-        if (res && res.data && res.data.token) {
-          return res.data.token;
-        }
-
-        if (res && res.token) {
-          return res.token;
-        }
-
-        return '';
-      }
-
-      function getLoginUser(res) {
-        if (res && res.data && res.data.user) {
-          return res.data.user;
-        }
-
-        if (res && res.user) {
-          return res.user;
-        }
-
-        return null;
-      }
-
-      function saveAuth(token, email, password, user) {
-        safeSet(KEYS.TOKEN, token);
-        safeSet(KEYS.EMAIL, email);
-        safeSet(KEYS.PASSWORD, password);
-        safeSet(KEYS.USER, JSON.stringify(user || {}));
-        safeSet(KEYS.ORIENTATION, getOrientation());
-      }
-
-      function resetLoginButton() {
-        loginBtnEl.disabled = false;
-        loginBtnEl.textContent = '로그인';
-      }
-
-      function tryAutoLogin() {
-        setStatus('자동 로그인 확인 중...');
-
-        var savedEmail = safeGet(KEYS.EMAIL);
-        var savedPassword = safeGet(KEYS.PASSWORD);
-
-        log('savedEmail: ' + (savedEmail || '(none)'));
-        log('savedPassword exists: ' + (!!savedPassword));
-
-        if (isInvalidValue(savedEmail) || isInvalidValue(savedPassword)) {
-          setStatus('로그인 정보를 입력해주세요');
-          return Promise.resolve(false);
-        }
-
-        setStatus('자동 로그인 시도 중...');
-
-        return withTimeout(
-          login(savedEmail, savedPassword),
-          7000,
-          'AUTO_LOGIN'
-        ).then(function (res) {
-          var token = getLoginToken(res);
-          var user = getLoginUser(res);
-
-          if (!token || !user) {
-            clearStorage();
-            setStatus('자동 로그인 실패');
-            setError('저장된 로그인 정보가 유효하지 않습니다.');
+      function initKeyEvents() {
+        document.addEventListener('keydown', function (e) {
+          if (e.keyCode === 10009) {
+            e.preventDefault();
+            log('뒤로가기 차단');
             return false;
           }
 
-          saveAuth(token, savedEmail, savedPassword, user);
-          setStatus('자동 로그인 성공');
-
-          return registerAndRedirect(token, user).then(function () {
-            return true;
-          });
-        }).catch(function (err) {
-          clearStorage();
-          setStatus('자동 로그인 실패');
-          setError('자동 로그인에 실패했습니다. 다시 로그인해주세요.');
-          log('auto login error: ' + String(err));
-          return false;
-        });
-      }
-
-      function handleLogin() {
-        var email = (emailEl.value || '').trim();
-        var password = passwordEl.value || '';
-
-        setError('');
-
-        if (!email) {
-          setError('이메일을 입력해주세요');
-          return;
-        }
-
-        if (!password) {
-          setError('비밀번호를 입력해주세요');
-          return;
-        }
-
-        setStatus('로그인 요청 중...');
-        loginBtnEl.disabled = true;
-        loginBtnEl.textContent = '로그인 중...';
-
-        withTimeout(
-          login(email, password),
-          7000,
-          'MANUAL_LOGIN'
-        ).then(function (res) {
-          var token = getLoginToken(res);
-          var user = getLoginUser(res);
-
-          if (!token || !user) {
-            setError('이메일 또는 비밀번호를 확인해주세요');
-            resetLoginButton();
-            return;
+          if (e.keyCode === 13) {
+            debugEl.className =
+              debugEl.className.indexOf('hidden') >= 0 ? 'debug' : 'debug hidden';
           }
-
-          saveAuth(token, email, password, user);
-          setStatus('로그인 성공');
-
-          return registerAndRedirect(token, user).then(function () {
-            resetLoginButton();
-          });
-        }).catch(function (err) {
-          setError('로그인 중 오류가 발생했습니다.');
-          log('manual login error: ' + String(err));
-          resetLoginButton();
         });
       }
 
-      loginBtnEl.addEventListener('click', handleLogin);
+      function init() {
+        applyOrientationClass();
+        initKeyEvents();
 
-      clearBtnEl.addEventListener('click', function () {
-        clearStorage();
-        setError('저장된 정보를 초기화했습니다.');
-        setStatus('로그인 정보를 입력해주세요');
-        log('storage cleared manually');
-      });
+        if (!deviceId) {
+          log('deviceId 없음 → 로그인 이동');
 
-      emailEl.addEventListener('keydown', function (e) {
-        if (e.key === 'Enter' || e.keyCode === 13) {
-          passwordEl.focus();
+          setTimeout(function () {
+            window.location.href = '/tv-login.html';
+          }, 500);
+
+          return;
         }
-      });
 
-      passwordEl.addEventListener('keydown', function (e) {
-        if (e.key === 'Enter' || e.keyCode === 13) {
-          handleLogin();
-        }
-      });
+        safeSet(KEYS.DEVICE_ID, deviceId);
 
-      document.addEventListener('keydown', function (e) {
-        if (e.keyCode === 10009) {
-          e.preventDefault();
-          setError('뒤로가기 버튼은 비활성화되어 있습니다.');
-        }
-      });
+        log('deviceId: ' + deviceId);
+        log('token exists: ' + !!getToken());
+
+        refreshContents('init');
+        initPusher();
+
+        refreshTimer = setInterval(function () {
+          refreshContents('interval');
+        }, 60000);
+      }
 
       window.addEventListener('resize', function () {
         applyOrientationClass();
@@ -797,14 +866,19 @@
         );
       };
 
-      applyOrientationClass();
-      setStatus('초기화 완료');
-
-      tryAutoLogin().then(function (done) {
-        if (!done) {
-          emailEl.focus();
+      window.onbeforeunload = function () {
+        if (refreshTimer) {
+          clearInterval(refreshTimer);
         }
-      });
+
+        if (imageTimer) {
+          clearTimeout(imageTimer);
+        }
+
+        disconnectPusher();
+      };
+
+      init();
     })();
   </script>
 </body>
