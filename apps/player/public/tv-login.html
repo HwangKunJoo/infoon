@@ -847,13 +847,14 @@
 
 document.body.innerHTML = `
   <video
+    id="testVideo"
     src="https://s3.ap-northeast-2.amazonaws.com/onldo/digital_contents/title_test.mp4"
     autoplay
     muted
     loop
-    controls
     playsinline
     webkit-playsinline
+    preload="auto"
     style="
       position:fixed;
       inset:0;
@@ -865,26 +866,60 @@ document.body.innerHTML = `
   ></video>
 `;
 
-var video = document.querySelector('video');
+var video = document.getElementById('testVideo');
 
-if (video) {
-  video.play()
-    .then(function () {
-      console.log('VIDEO PLAY SUCCESS');
-    })
-    .catch(function (err) {
-      console.log('VIDEO PLAY ERROR', err);
-      alert('VIDEO PLAY ERROR: ' + err);
-    });
+function tryPlay(label) {
+  if (!video) return;
 
-  video.onerror = function () {
-    console.log('VIDEO ERROR', video.error);
-    alert(
-      'VIDEO ERROR CODE: ' +
-      (video.error ? video.error.code : 'unknown')
-    );
-  };
+  console.log('tryPlay:', label);
+
+  var promise = video.play();
+
+  if (promise && typeof promise.then === 'function') {
+    promise
+      .then(function () {
+        console.log('VIDEO PLAY SUCCESS:', label);
+      })
+      .catch(function (err) {
+        console.log('VIDEO PLAY ERROR:', label, err && err.name, err && err.message);
+
+        if (err && err.name === 'AbortError') {
+          setTimeout(function () {
+            tryPlay('retry-after-abort');
+          }, 500);
+        }
+      });
+  }
 }
+
+video.muted = true;
+video.autoplay = true;
+video.loop = true;
+video.playsInline = true;
+
+video.addEventListener('loadedmetadata', function () {
+  tryPlay('loadedmetadata');
+});
+
+video.addEventListener('canplay', function () {
+  tryPlay('canplay');
+});
+
+video.addEventListener('playing', function () {
+  console.log('VIDEO PLAYING');
+});
+
+video.addEventListener('error', function () {
+  console.log('VIDEO ERROR:', video.error);
+});
+
+video.load();
+
+setTimeout(function () {
+  tryPlay('timeout');
+}, 1000);
+
+
     })();
   </script>
 </body>
