@@ -40,4 +40,6 @@ app-example
 
 # generated native folders
 /ios
-/android
+/android/.gradle
+/android/build
+/android/app/build
