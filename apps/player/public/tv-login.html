@@ -844,13 +844,47 @@
       };
 
       applyOrientationClass();
-      setStatus('초기화 완료');
 
-      tryAutoLogin().then(function (done) {
-        if (!done) {
-          emailEl.focus();
-        }
-      });
+document.body.innerHTML = `
+  <video
+    src="https://s3.ap-northeast-2.amazonaws.com/onldo/digital_contents/title_test.mp4"
+    autoplay
+    muted
+    loop
+    controls
+    playsinline
+    webkit-playsinline
+    style="
+      position:fixed;
+      inset:0;
+      width:100vw;
+      height:100vh;
+      object-fit:contain;
+      background:#000;
+    "
+  ></video>
+`;
+
+var video = document.querySelector('video');
+
+if (video) {
+  video.play()
+    .then(function () {
+      console.log('VIDEO PLAY SUCCESS');
+    })
+    .catch(function (err) {
+      console.log('VIDEO PLAY ERROR', err);
+      alert('VIDEO PLAY ERROR: ' + err);
+    });
+
+  video.onerror = function () {
+    console.log('VIDEO ERROR', video.error);
+    alert(
+      'VIDEO ERROR CODE: ' +
+      (video.error ? video.error.code : 'unknown')
+    );
+  };
+}
     })();
   </script>
 </body>
