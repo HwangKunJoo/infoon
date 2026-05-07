@@ -9,14 +9,12 @@ const START_URL = 'https://infoon.vercel.app/tv-login.html';
 
 export default function HomeScreen() {
   useEffect(() => {
-    ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
+    ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE).catch(() => {});
 
-    NavigationBar.setVisibilityAsync('hidden');
-    NavigationBar.setBehaviorAsync('overlay-swipe');
+    NavigationBar.setVisibilityAsync('hidden').catch(() => {});
+    NavigationBar.setBehaviorAsync('overlay-swipe').catch(() => {});
 
-    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
-      return true;
-    });
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => true);
 
     return () => subscription.remove();
   }, []);
@@ -24,6 +22,7 @@ export default function HomeScreen() {
   return (
     <View style={styles.container}>
       <StatusBar hidden />
+
       <WebView
         source={{ uri: START_URL }}
         style={styles.webview}
@@ -31,8 +30,11 @@ export default function HomeScreen() {
         domStorageEnabled
         mediaPlaybackRequiresUserAction={false}
         allowsFullscreenVideo
-        originWhitelist={['*']}
+        allowsInlineMediaPlayback
         mixedContentMode="always"
+        androidLayerType="hardware"
+        setSupportMultipleWindows={false}
+        originWhitelist={['*']}
       />
     </View>
   );

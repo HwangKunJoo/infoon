@@ -497,7 +497,7 @@
         if (token) {
           headers['Authorization'] = 'Bearer ' + token;
         }
-
+        log('FETCH URL: ' + BASE_URL + path);
         return fetch(BASE_URL + path, {
           method: finalOptions.method || 'GET',
           headers: headers,
@@ -793,7 +793,10 @@
           });
         }).catch(function (err) {
           setError('로그인 중 오류가 발생했습니다.');
-          log('manual login error: ' + String(err));
+          
+          log('manual login error name: ' + (err && err.name));
+log('manual login error message: ' + (err && err.message));
+log('manual login error stack: ' + (err && err.stack));
           resetLoginButton();
         });
       }
@@ -845,79 +848,12 @@
 
       applyOrientationClass();
 
-document.body.innerHTML = `
-  <video
-    id="testVideo"
-    src="https://s3.ap-northeast-2.amazonaws.com/onldo/digital_contents/title_test.mp4"
-    autoplay
-    muted
-    loop
-    playsinline
-    webkit-playsinline
-    preload="auto"
-    style="
-      position:fixed;
-      inset:0;
-      width:100vw;
-      height:100vh;
-      object-fit:contain;
-      background:#000;
-    "
-  ></video>
-`;
-
-var video = document.getElementById('testVideo');
-
-function tryPlay(label) {
-  if (!video) return;
-
-  console.log('tryPlay:', label);
-
-  var promise = video.play();
-
-  if (promise && typeof promise.then === 'function') {
-    promise
-      .then(function () {
-        console.log('VIDEO PLAY SUCCESS:', label);
-      })
-      .catch(function (err) {
-        console.log('VIDEO PLAY ERROR:', label, err && err.name, err && err.message);
-
-        if (err && err.name === 'AbortError') {
-          setTimeout(function () {
-            tryPlay('retry-after-abort');
-          }, 500);
-        }
-      });
+tryAutoLogin().then(function (done) {
+  if (!done) {
+    emailEl.focus();
   }
-}
-
-video.muted = true;
-video.autoplay = true;
-video.loop = true;
-video.playsInline = true;
-
-video.addEventListener('loadedmetadata', function () {
-  tryPlay('loadedmetadata');
 });
 
-video.addEventListener('canplay', function () {
-  tryPlay('canplay');
-});
-
-video.addEventListener('playing', function () {
-  console.log('VIDEO PLAYING');
-});
-
-video.addEventListener('error', function () {
-  console.log('VIDEO ERROR:', video.error);
-});
-
-video.load();
-
-setTimeout(function () {
-  tryPlay('timeout');
-}, 1000);
 
 
     })();
