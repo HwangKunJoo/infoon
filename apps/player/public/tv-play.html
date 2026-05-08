@@ -85,30 +85,6 @@
       padding: 64px;
     }
 
-    .debug {
-      position: absolute;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      max-height: 180px;
-      overflow: auto;
-      background: rgba(0, 0, 0, 0.62);
-      color: #39ff14;
-      font-size: 14px;
-      padding: 10px;
-      z-index: 30;
-    }
-
-    body.portrait .debug {
-      max-height: 260px;
-      font-size: 18px;
-      padding: 14px;
-    }
-
-    .debug.hidden {
-      display: none;
-    }
-
     .loading {
       position: absolute;
       right: 24px;
@@ -181,8 +157,6 @@
       <div id="overlayTitle" class="overlay-title"></div>
       <div id="overlaySub" class="overlay-sub"></div>
     </div>
-
-    <div id="debug" class="debug"></div>
   </div>
 
   <script>
@@ -203,7 +177,6 @@
       var imageEl = document.getElementById('image');
       var emptyEl = document.getElementById('empty');
       var loadingEl = document.getElementById('loading');
-      var debugEl = document.getElementById('debug');
       var overlayTitleEl = document.getElementById('overlayTitle');
       var overlaySubEl = document.getElementById('overlaySub');
 
@@ -273,26 +246,7 @@
         document.body.className = document.body.className + ' ' + orientation;
         safeSet(KEYS.ORIENTATION, orientation);
 
-        log('[ORIENTATION] ' + orientation + ' / ' + window.innerWidth + 'x' + window.innerHeight);
-
         return orientation;
-      }
-
-      function log(text) {
-        try {
-          console.log('[TV PLAY]', text);
-        } catch (e) {}
-
-        if (!debugEl) return;
-
-        var div = document.createElement('div');
-        div.textContent = text;
-        debugEl.appendChild(div);
-        debugEl.scrollTop = debugEl.scrollHeight;
-
-        while (debugEl.children.length > 80) {
-          debugEl.removeChild(debugEl.children[0]);
-        }
       }
 
       function showLoading(show) {
@@ -309,11 +263,11 @@
         el.style.display = 'block';
         el.className = el.className.replace(/\bshow\b/g, '').replace(/\s+/g, ' ');
 
-setTimeout(function () {
-  if (el.className.indexOf('show') < 0) {
-    el.className = el.className + ' show';
-  }
-}, 20);
+        setTimeout(function () {
+          if (el.className.indexOf('show') < 0) {
+            el.className = el.className + ' show';
+          }
+        }, 20);
       }
 
       function hideElement(el) {
@@ -361,8 +315,6 @@ setTimeout(function () {
           method: 'GET',
           headers: headers
         }).then(function (res) {
-          log('HTTP ' + res.status + ' ' + path);
-
           return res.text().then(function (text) {
             var data = null;
 
@@ -373,7 +325,6 @@ setTimeout(function () {
             }
 
             if (!res.ok) {
-              log('response error body: ' + String(text));
               throw new Error('HTTP_' + res.status);
             }
 
@@ -531,14 +482,11 @@ setTimeout(function () {
 
       function refreshContents(reason) {
         if (isRefreshing) {
-          log('이미 갱신 중이라 skip');
           return;
         }
 
         isRefreshing = true;
         showLoading(true);
-
-        log('playlist 갱신: ' + (reason || 'manual'));
 
         fetchDevices()
           .then(function (res) {
@@ -546,8 +494,6 @@ setTimeout(function () {
 
             contents = nextContents;
             currentIndex = 0;
-
-            log('contents count: ' + contents.length);
 
             if (!contents.length) {
               hidePlayers();
@@ -559,9 +505,7 @@ setTimeout(function () {
             showEmpty(false);
             playCurrent();
           })
-          .catch(function (err) {
-            log('refresh error: ' + String(err));
-
+          .catch(function () {
             if (!contents.length) {
               hidePlayers();
               updateOverlay(null);
@@ -592,8 +536,6 @@ setTimeout(function () {
 
         updateOverlay(item);
 
-        log('play index ' + currentIndex + ' / type: ' + type + ' / url: ' + url);
-
         if (!url) {
           playNext();
           return;
@@ -607,123 +549,94 @@ setTimeout(function () {
       }
 
       function playVideo(url) {
-  if (imageTimer) {
-    clearTimeout(imageTimer);
-    imageTimer = null;
-  }
+        if (imageTimer) {
+          clearTimeout(imageTimer);
+          imageTimer = null;
+        }
 
-  clearImageSource();
-  hideElement(imageEl);
+        clearImageSource();
+        hideElement(imageEl);
 
-  videoEl.onloadedmetadata = null;
-  videoEl.oncanplay = null;
-  videoEl.onplaying = null;
-  videoEl.onloadeddata = null;
-  videoEl.onended = null;
-  videoEl.onerror = null;
+        videoEl.onloadedmetadata = null;
+        videoEl.oncanplay = null;
+        videoEl.onplaying = null;
+        videoEl.onloadeddata = null;
+        videoEl.onended = null;
+        videoEl.onerror = null;
 
-  videoEl.className = videoEl.className.replace('show', '');
-  videoEl.style.display = 'block';
+        videoEl.className = videoEl.className.replace('show', '');
+        videoEl.style.display = 'block';
 
-  videoEl.muted = true;
-  videoEl.autoplay = true;
-  videoEl.controls = false;
-  videoEl.playsInline = true;
-  videoEl.setAttribute('playsinline', 'true');
-  videoEl.setAttribute('webkit-playsinline', 'true');
+        videoEl.muted = true;
+        videoEl.autoplay = true;
+        videoEl.controls = false;
+        videoEl.playsInline = true;
+        videoEl.setAttribute('playsinline', 'true');
+        videoEl.setAttribute('webkit-playsinline', 'true');
 
-  videoEl.src = url;
+        videoEl.src = url;
 
-  var hasStartedPlay = false;
+        var hasStartedPlay = false;
 
-function startPlay(label) {
-  if (hasStartedPlay) {
-    log('video startPlay skipped: ' + label);
-    return;
-  }
+        function startPlay() {
+          if (hasStartedPlay) {
+            return;
+          }
 
-  hasStartedPlay = true;
-
-  log('video startPlay: ' + label);
-
-  showElement(videoEl);
-
-  try {
-    var playPromise = videoEl.play();
-
-    if (playPromise && typeof playPromise.then === 'function') {
-      playPromise
-        .then(function () {
-          log('video playing');
+          hasStartedPlay = true;
           showElement(videoEl);
-        })
-        .catch(function (err) {
-          log('video play error: ' + String(err));
-        });
-    }
-  } catch (e) {
-    log('video play exception: ' + String(e));
-  }
-}
 
-  videoEl.onloadedmetadata = function () {
-    log('video metadata loaded');
-    startPlay('metadata');
-  };
+          try {
+            var playPromise = videoEl.play();
 
-  videoEl.onloadeddata = function () {
-    log('video loadeddata');
-    showElement(videoEl);
-  };
+            if (playPromise && typeof playPromise.then === 'function') {
+              playPromise
+                .then(function () {
+                  showElement(videoEl);
+                })
+                .catch(function () {});
+            }
+          } catch (e) {}
+        }
 
-  videoEl.oncanplay = function () {
-    log('video canplay');
-    startPlay('canplay');
-  };
+        videoEl.onloadedmetadata = function () {
+          startPlay();
+        };
 
-  videoEl.onplaying = function () {
-    log('video onplaying');
-    showElement(videoEl);
-  };
+        videoEl.onloadeddata = function () {
+          showElement(videoEl);
+        };
 
-  videoEl.onended = function () {
-    log('video ended');
-    playNext();
-  };
+        videoEl.oncanplay = function () {
+          startPlay();
+        };
 
-  videoEl.onerror = function () {
-  var err = videoEl.error || {};
-  var code = err.code || 'unknown';
-  var message = err.message || '';
-  
-  log('=== VIDEO ERROR ===');
-  log('code: ' + code);
-  log('message: ' + message);
-  log('src: ' + videoEl.src);
-  log('networkState: ' + videoEl.networkState);
-  log('readyState: ' + videoEl.readyState);
-  log('===================');
-  
-  playNext();
-};
+        videoEl.onplaying = function () {
+          showElement(videoEl);
+        };
 
-  try {
-    videoEl.load();
-  } catch (e) {
-    log('video load exception: ' + String(e));
-    playNext();
-  }
+        videoEl.onended = function () {
+          playNext();
+        };
 
-  setTimeout(function () {
-    if (videoEl.paused) {
-      log('video still paused after 2s, retry');
-      startPlay('timeout');
-    } else {
-      log('video not paused after 2s');
-      showElement(videoEl);
-    }
-  }, 2000);
-}
+        videoEl.onerror = function () {
+          playNext();
+        };
+
+        try {
+          videoEl.load();
+        } catch (e) {
+          playNext();
+        }
+
+        setTimeout(function () {
+          if (videoEl.paused) {
+            startPlay();
+          } else {
+            showElement(videoEl);
+          }
+        }, 2000);
+      }
 
       function preloadImage(url) {
         return new Promise(function (resolve, reject) {
@@ -755,12 +668,8 @@ function startPlay(label) {
 
         preloadImage(url)
           .then(function () {
-            imageEl.onload = function () {
-              log('image loaded');
-            };
-
+            imageEl.onload = function () {};
             imageEl.onerror = function () {
-              log('image error');
               playNext();
             };
 
@@ -771,8 +680,7 @@ function startPlay(label) {
               playNext();
             }, Math.max(1, duration) * 1000);
           })
-          .catch(function (err) {
-            log('image preload error: ' + String(err));
+          .catch(function () {
             playNext();
           });
       }
@@ -789,12 +697,32 @@ function startPlay(label) {
         playCurrent();
       }
 
+      function isAndroidWebView() {
+        return !!(
+          window.ReactNativeWebView &&
+          typeof window.ReactNativeWebView.postMessage === 'function'
+        );
+      }
+
+      function postNativeCommand(command) {
+        try {
+          if (!isAndroidWebView()) {
+            return;
+          }
+
+          window.ReactNativeWebView.postMessage(
+            JSON.stringify({
+              type: 'QUBER_COMMAND',
+              command: command
+            })
+          );
+        } catch (e) {}
+      }
+
       function initPusher() {
         if (!deviceId) return;
 
         try {
-          log('Pusher 연결 시도');
-
           pusherInstance = new Pusher(PUSHER_KEY, {
             cluster: PUSHER_CLUSTER
           });
@@ -802,20 +730,23 @@ function startPlay(label) {
           var channelName = 'tv-control-' + deviceId;
           var channel = pusherInstance.subscribe(channelName);
 
-          log('Pusher 채널 구독: ' + channelName);
-
-          channel.bind(PUSHER_EVENT, function (data) {
-            log('Pusher refresh 수신: ' + JSON.stringify(data || {}));
+          channel.bind(PUSHER_EVENT, function () {
             refreshContents('pusher');
           });
 
-          pusherInstance.connection.bind('connected', function () {
-            log('Pusher connected');
+          channel.bind('power-off', function () {
+            postNativeCommand('power-off');
+          });
+
+          channel.bind('tv-on', function () {
+            postNativeCommand('tv-on');
+          });
+
+          channel.bind('reboot', function () {
+            postNativeCommand('reboot');
           });
 
           pusherInstance.connection.bind('disconnected', function () {
-            log('Pusher disconnected');
-
             try {
               pusherInstance.disconnect();
             } catch (e) {}
@@ -827,12 +758,8 @@ function startPlay(label) {
             }, 3000);
           });
 
-          pusherInstance.connection.bind('error', function (err) {
-            log('Pusher error: ' + JSON.stringify(err || {}));
-          });
+          pusherInstance.connection.bind('error', function () {});
         } catch (e) {
-          log('Pusher init error: ' + String(e));
-
           setTimeout(function () {
             initPusher();
           }, 3000);
@@ -843,13 +770,7 @@ function startPlay(label) {
         document.addEventListener('keydown', function (e) {
           if (e.keyCode === 10009) {
             e.preventDefault();
-            log('뒤로가기 차단');
             return false;
-          }
-
-          if (e.keyCode === 13) {
-            debugEl.className =
-              debugEl.className.indexOf('hidden') >= 0 ? 'debug' : 'debug hidden';
           }
         });
       }
@@ -859,8 +780,6 @@ function startPlay(label) {
         initKeyEvents();
 
         if (!deviceId) {
-          log('deviceId 없음 → 로그인 이동');
-
           setTimeout(function () {
             try {
               window.location.replace('https://infoon.vercel.app/tv-login.html');
@@ -874,9 +793,6 @@ function startPlay(label) {
 
         safeSet(KEYS.DEVICE_ID, deviceId);
 
-        log('deviceId: ' + deviceId);
-        log('token exists: ' + !!getToken());
-
         refreshContents('init');
         initPusher();
 
@@ -889,17 +805,8 @@ function startPlay(label) {
         applyOrientationClass();
       });
 
-      window.onerror = function (msg, src, line, col) {
-        log(
-          'window.onerror: ' +
-          String(msg) +
-          ' / ' +
-          String(src) +
-          ' / ' +
-          line +
-          ':' +
-          col
-        );
+      window.onerror = function () {
+        return true;
       };
 
       window.onbeforeunload = function () {

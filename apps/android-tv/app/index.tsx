@@ -1,103 +1,249 @@
 import { StatusBar } from 'expo-status-bar';
 import {
   BackHandler,
+  Dimensions,
+  Image,
   NativeModules,
   StyleSheet,
   View,
-  Text,
 } from 'react-native';
-import { WebView } from 'react-native-webview';
-import { useEffect, useState } from 'react';
+import { WebView, WebViewMessageEvent } from 'react-native-webview';
+import { useCallback, useEffect, useState } from 'react';
 import * as NavigationBar from 'expo-navigation-bar';
 import * as ScreenOrientation from 'expo-screen-orientation';
 
 const START_URL = 'https://infoon.vercel.app/tv-login.html';
 const PACKAGE_NAME = 'com.infoon.tv';
 
-const { QuberModule } = NativeModules;
+const SPLASH_DURATION = 1800;
 
-export default function HomeScreen() {
-  const [debugLogs, setDebugLogs] = useState<string[]>([]);
+const splashLandscape = require('../assets/images/splash-landscape.png');
+const splashPortrait = require('../assets/images/splash-portrait.png');
 
-  function addLog(message: string) {
-    console.log(message);
+type QuberModuleType = {
+  sendRequest?: (jsonMsg: string) => Promise<string>;
+};
 
-    setDebugLogs((prev) => [
-      ...prev.slice(-10),
-      `${new Date().toLocaleTimeString()} ${message}`,
-    ]);
-  }
+type WebViewMessage =
+  | {
+      type: 'QUBER_COMMAND';
+      command: string;
+    }
+  | {
+      type: string;
+      [key: string]: unknown;
+    };
 
-  function makeRequestId() {
-    const now = new Date();
+const QuberModule = NativeModules.QuberModule as QuberModuleType | undefined;
 
-    const pad = (n: number, len = 2) =>
-      String(n).padStart(len, '0');
+function makeRequestId() {
+  const now = new Date();
+  const pad = (n: number, len = 2) => String(n).padStart(len, '0');
 
-    return (
-      now.getFullYear().toString() +
-      pad(now.getMonth() + 1) +
-      pad(now.getDate()) +
-      pad(now.getHours()) +
-      pad(now.getMinutes()) +
-      pad(now.getSeconds()) +
-      pad(now.getMilliseconds(), 3)
-    );
-  }
+  return (
+    now.getFullYear().toString() +
+    pad(now.getMonth() + 1) +
+    pad(now.getDate()) +
+    pad(now.getHours()) +
+    pad(now.getMinutes()) +
+    pad(now.getSeconds()) +
+    pad(now.getMilliseconds(), 3)
+  );
+}
 
-  async function sendQuberRequest(
-    cmdCode: string,
-    params?: Record<string, unknown>
-  ) {
-    try {
-      if (!QuberModule?.sendRequest) {
-        addLog('[QUBER] QuberModule not available');
-        return null;
-      }
-
-      const payload: Record<string, unknown> = {
-        requestId: makeRequestId(),
-        cmdCode,
-      };
-
-      if (params) {
-        payload.params = params;
-      }
-
-      addLog('[QUBER] request: ' + JSON.stringify(payload));
-
-      const res = await QuberModule.sendRequest(
-        JSON.stringify(payload)
-      );
-
-      addLog('[QUBER] response: ' + String(res));
-
-      return res;
-    } catch (error) {
-      addLog('[QUBER] sendRequest error: ' + String(error));
+async function sendQuberRequest(
+  cmdCode: string,
+  params?: Record<string, unknown> | unknown[]
+) {
+  try {
+    if (!QuberModule || typeof QuberModule.sendRequest !== 'function') {
+      console.log('[QUBER] QuberModule not available');
       return null;
     }
-  }
 
-  async function setupAutoRun() {
-    try {
-      addLog('[QUBER] AutoRun setup start');
+    const payload: Record<string, unknown> = {
+      requestId: makeRequestId(),
+      cmdCode,
+    };
 
-      const setResult = await sendQuberRequest('213019', {
-        packageName: PACKAGE_NAME,
-      });
-
-      addLog('[QUBER] setResult: ' + String(setResult));
-
-      const readResult = await sendQuberRequest('211034');
-
-      addLog('[QUBER] readResult: ' + String(readResult));
-
-      addLog('[QUBER] AutoRun setup done');
-    } catch (error) {
-      addLog('[QUBER] AutoRun setup error: ' + String(error));
+    if (params) {
+      payload.params = params;
     }
+
+    const response = await QuberModule.sendRequest(JSON.stringify(payload));
+
+    console.log('[QUBER] response:', response);
+
+    return response;
+  } catch (error) {
+    console.log('[QUBER] request failed:', error);
+    return null;
   }
+}
+
+async function setupAutoRun() {
+  try {
+    const setResult = await sendQuberRequest('213019', {
+      packageName: PACKAGE_NAME,
+    });
+
+    console.log('[QUBER] AutoRun set:', setResult);
+
+    const readResult = await sendQuberRequest('211034');
+
+    console.log('[QUBER] AutoRun read:', readResult);
+  } catch (error) {
+    console.log('[QUBER] AutoRun setup failed:', error);
+  }
+}
+
+async function readInstalledApps() {
+  return sendQuberRequest('211033');
+}
+
+async function clearAutoRun() {
+  return sendQuberRequest('214002');
+}
+
+async function readAutoRun() {
+  return sendQuberRequest('211034');
+}
+
+async function turnTvOnByCec() {
+  return sendQuberRequest('215031', {
+    status: 'on',
+  });
+}
+
+async function turnTvStandbyByCec() {
+  return sendQuberRequest('215031', {
+    status: 'standby',
+  });
+}
+
+async function readTvPowerStatusByCec() {
+  return sendQuberRequest('211049');
+}
+
+async function setHdmiOutputOn() {
+  return sendQuberRequest('213020', {
+    onStatus: 'true',
+  });
+}
+
+async function setHdmiOutputOff() {
+  return sendQuberRequest('213020', {
+    onStatus: 'false',
+  });
+}
+
+async function readDisplayStatus() {
+  return sendQuberRequest('111009');
+}
+
+async function rebootSetTopBox() {
+  return sendQuberRequest('215001');
+}
+
+async function scheduleTvWakeupInMinutes(minutes = 3) {
+  const next = new Date(Date.now() + minutes * 60_000);
+  const dayOfWeek = next.getDay() === 0 ? 1 : next.getDay() + 1;
+  const hh = String(next.getHours()).padStart(2, '0');
+  const mm = String(next.getMinutes()).padStart(2, '0');
+
+  return sendQuberRequest('213004', [
+    {
+      dayOfWeek,
+      rebootTime: '-1',
+      sleepTime: '-1',
+      wakeupTime: `${hh}:${mm}`,
+    },
+  ]);
+}
+
+async function runQuberCommand(command: string) {
+  console.log('[QUBER] command:', command);
+
+  switch (command) {
+    case 'tv-on':
+      await scheduleTvWakeupInMinutes(3);
+      await setHdmiOutputOn();
+      await turnTvOnByCec();
+      return;
+
+    case 'power-off':
+      await turnTvStandbyByCec();
+      return;
+
+    case 'reboot':
+      await rebootSetTopBox();
+      return;
+
+    case 'hdmi-on':
+      await setHdmiOutputOn();
+      return;
+
+    case 'hdmi-off':
+      await setHdmiOutputOff();
+      return;
+
+    case 'autorun-set':
+      await setupAutoRun();
+      return;
+
+    case 'autorun-clear':
+      await clearAutoRun();
+      return;
+
+    case 'autorun-read':
+      await readAutoRun();
+      return;
+
+    case 'installed-apps-read':
+      await readInstalledApps();
+      return;
+
+    case 'display-status-read':
+      await readDisplayStatus();
+      return;
+
+    case 'tv-power-status-read':
+      await readTvPowerStatusByCec();
+      return;
+
+    default:
+      console.log('[QUBER] unknown command:', command);
+  }
+}
+
+export default function HomeScreen() {
+  const [showSplash, setShowSplash] = useState(true);
+
+  const { width, height } = Dimensions.get('window');
+  const isLandscape = width >= height;
+
+  const handleWebViewMessage = useCallback(async (event: WebViewMessageEvent) => {
+    try {
+      const rawData = event.nativeEvent.data;
+      const data = JSON.parse(rawData) as WebViewMessage;
+
+      if (data.type === 'QUBER_COMMAND' && 'command' in data) {
+        await runQuberCommand(String(data.command));
+      }
+    } catch (error) {
+      console.log('[WEBVIEW] message parse failed:', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setShowSplash(false);
+    }, SPLASH_DURATION);
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, []);
 
   useEffect(() => {
     ScreenOrientation.lockAsync(
@@ -114,34 +260,43 @@ export default function HomeScreen() {
       () => true
     );
 
-    return () => subscription.remove();
+    return () => {
+      subscription.remove();
+    };
   }, []);
 
   return (
     <View style={styles.container}>
       <StatusBar hidden />
 
-      <WebView
-        source={{ uri: START_URL }}
-        style={styles.webview}
-        javaScriptEnabled
-        domStorageEnabled
-        mediaPlaybackRequiresUserAction={false}
-        allowsFullscreenVideo
-        allowsInlineMediaPlayback
-        mixedContentMode="always"
-        androidLayerType="hardware"
-        setSupportMultipleWindows={false}
-        originWhitelist={['*']}
-      />
-
-      <View style={styles.debugBox}>
-        {debugLogs.map((log, index) => (
-          <Text key={index} style={styles.debugText}>
-            {log}
-          </Text>
-        ))}
-      </View>
+      {showSplash ? (
+        <Image
+          source={isLandscape ? splashLandscape : splashPortrait}
+          style={styles.splashImage}
+          resizeMode="cover"
+        />
+      ) : (
+        <WebView
+          source={{ uri: START_URL }}
+          style={styles.webview}
+          javaScriptEnabled
+          domStorageEnabled
+          mediaPlaybackRequiresUserAction={false}
+          allowsFullscreenVideo
+          allowsInlineMediaPlayback
+          mixedContentMode="always"
+          androidLayerType="hardware"
+          setSupportMultipleWindows={false}
+          originWhitelist={['*']}
+          onMessage={handleWebViewMessage}
+          onError={(event) => {
+            console.log('[WEBVIEW] error:', event.nativeEvent);
+          }}
+          onHttpError={(event) => {
+            console.log('[WEBVIEW] http error:', event.nativeEvent);
+          }}
+        />
+      )}
     </View>
   );
 }
@@ -152,25 +307,14 @@ const styles = StyleSheet.create({
     backgroundColor: '#000',
   },
 
-  webview: {
-    flex: 1,
+  splashImage: {
+    width: '100%',
+    height: '100%',
     backgroundColor: '#000',
   },
 
-  debugBox: {
-    position: 'absolute',
-    top: 20,
-    left: 20,
-    right: 20,
-    backgroundColor: 'rgba(0,0,0,0.75)',
-    padding: 10,
-    borderRadius: 8,
-    zIndex: 9999,
-  },
-
-  debugText: {
-    color: '#00ff00',
-    fontSize: 12,
-    marginBottom: 4,
+  webview: {
+    flex: 1,
+    backgroundColor: '#000',
   },
 });

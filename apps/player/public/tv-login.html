@@ -268,6 +268,22 @@
       var loginBtnEl = document.getElementById('loginBtn');
       var clearBtnEl = document.getElementById('clearBtn');
 
+      function notifyNativeDeviceId(deviceId) {
+        try {
+          if (
+            window.ReactNativeWebView &&
+            typeof window.ReactNativeWebView.postMessage === 'function'
+          ) {
+            window.ReactNativeWebView.postMessage(
+              JSON.stringify({
+                type: 'DEVICE_ID_REGISTERED',
+                deviceId: String(deviceId)
+              })
+            );
+          }
+        } catch (e) {}
+      }
+
       function safeGet(key) {
         try { return localStorage.getItem(key); } catch (e) { return null; }
       }
@@ -488,7 +504,8 @@
       function registerAndRedirect(token, user) {
         var savedDeviceId = safeGet(KEYS.DEVICE_ID);
 
-        if (!isInvalidValue(savedDeviceId)) {
+       if (!isInvalidValue(savedDeviceId)) {
+          notifyNativeDeviceId(savedDeviceId);
           redirectToPlay(savedDeviceId);
           return Promise.resolve();
         }
@@ -521,6 +538,7 @@
           }
 
           safeSet(KEYS.DEVICE_ID, deviceId);
+          notifyNativeDeviceId(deviceId);
           redirectToPlay(deviceId);
         });
       }
