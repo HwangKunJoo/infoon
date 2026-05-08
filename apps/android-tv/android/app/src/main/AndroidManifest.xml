@@ -1,9 +1,15 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
   <uses-permission android:name="android.permission.INTERNET"/>
   <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
   <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
   <uses-permission android:name="android.permission.VIBRATE"/>
   <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
+  <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+
+  <uses-feature android:name="android.software.leanback" android:required="false"/>
+  <uses-feature android:name="android.hardware.touchscreen" android:required="false"/>
+
   <queries>
     <intent>
       <action android:name="android.intent.action.VIEW"/>
@@ -11,29 +17,69 @@
       <data android:scheme="https"/>
     </intent>
   </queries>
-      <uses-feature
-        android:name="android.software.leanback"
-        android:required="false" />
 
-    <uses-feature
-        android:name="android.hardware.touchscreen"
-        android:required="false" />
-  <application android:name=".MainApplication" android:label="@string/app_name" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round" android:allowBackup="true" android:theme="@style/AppTheme" android:supportsRtl="true" android:enableOnBackInvokedCallback="false">
-    <meta-data android:name="expo.modules.updates.ENABLED" android:value="false"/>
-    <meta-data android:name="expo.modules.updates.EXPO_UPDATES_CHECK_ON_LAUNCH" android:value="ALWAYS"/>
-    <meta-data android:name="expo.modules.updates.EXPO_UPDATES_LAUNCH_WAIT_MS" android:value="0"/>
-    <activity android:name=".MainActivity" android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|uiMode" android:launchMode="singleTask" android:windowSoftInputMode="adjustResize" android:theme="@style/Theme.App.SplashScreen" android:exported="true" android:screenOrientation="landscape">
+  <application
+    android:name=".MainApplication"
+    android:label="@string/app_name"
+    android:icon="@mipmap/ic_launcher"
+    android:roundIcon="@mipmap/ic_launcher_round"
+    android:allowBackup="true"
+    android:theme="@style/AppTheme"
+    android:supportsRtl="true"
+    android:enableOnBackInvokedCallback="false"
+    android:fullBackupContent="@xml/secure_store_backup_rules"
+    android:dataExtractionRules="@xml/secure_store_data_extraction_rules">
+
+    <meta-data
+      android:name="expo.modules.updates.ENABLED"
+      android:value="false"/>
+
+    <meta-data
+      android:name="expo.modules.updates.EXPO_UPDATES_CHECK_ON_LAUNCH"
+      android:value="ALWAYS"/>
+
+    <meta-data
+      android:name="expo.modules.updates.EXPO_UPDATES_LAUNCH_WAIT_MS"
+      android:value="0"/>
+
+    <activity
+      android:name=".MainActivity"
+      android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|uiMode"
+      android:launchMode="singleTask"
+      android:windowSoftInputMode="adjustResize"
+      android:theme="@style/Theme.App.SplashScreen"
+      android:exported="true"
+      android:screenOrientation="landscape">
+
+      <!-- 앱 실행 -->
       <intent-filter>
         <action android:name="android.intent.action.MAIN"/>
+
+        <!-- 일반 런처 -->
         <category android:name="android.intent.category.LAUNCHER"/>
-        <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+
+        <!-- Android TV -->
+        <category android:name="android.intent.category.LEANBACK_LAUNCHER"/>
+
+        <!-- 홈 런처 -->
+        <category android:name="android.intent.category.HOME"/>
+        <category android:name="android.intent.category.DEFAULT"/>
       </intent-filter>
+
+      <!-- 딥링크 -->
       <intent-filter>
         <action android:name="android.intent.action.VIEW"/>
         <category android:name="android.intent.category.DEFAULT"/>
         <category android:name="android.intent.category.BROWSABLE"/>
         <data android:scheme="androidtv"/>
       </intent-filter>
+
     </activity>
+
+    <activity
+      android:name="com.facebook.react.devsupport.DevSettingsActivity"
+      android:exported="false"/>
+
   </application>
+
 </manifest>

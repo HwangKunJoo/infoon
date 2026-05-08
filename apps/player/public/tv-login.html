@@ -6,12 +6,9 @@
   <title>인포온 TV 로그인</title>
 
   <style>
-    * {
-      box-sizing: border-box;
-    }
+    * { box-sizing: border-box; }
 
-    html,
-    body {
+    html, body {
       width: 100%;
       height: 100%;
       margin: 0;
@@ -22,13 +19,8 @@
       background: #f5f5f5;
     }
 
-    body {
-      display: flex;
-    }
+    body { display: flex; }
 
-    /* =========================
-       가로형 TV UI
-       ========================= */
     body.landscape {
       align-items: center;
       justify-content: center;
@@ -49,19 +41,7 @@
       display: grid;
       grid-template-columns: 0.9fr 1.1fr;
       column-gap: 40px;
-      align-items: stretch;
-    }
-
-    body.landscape .infoArea {
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-      min-width: 0;
-    }
-
-    body.landscape #formArea {
-      min-width: 0;
-      padding-top: 2px;
+      align-items: center;
     }
 
     body.landscape h1 {
@@ -88,9 +68,7 @@
       word-break: break-word;
     }
 
-    body.landscape .field {
-      margin-bottom: 14px;
-    }
+    body.landscape .field { margin-bottom: 14px; }
 
     body.landscape .label {
       display: block;
@@ -129,37 +107,6 @@
       min-height: 22px;
     }
 
-    body.landscape .debug {
-      margin-top: 18px;
-      padding-top: 16px;
-      border-top: 1px solid #e5e7eb;
-    }
-
-    body.landscape .debug-title {
-      margin: 0 0 8px;
-      font-size: 15px;
-      font-weight: 700;
-      color: #374151;
-    }
-
-    body.landscape .log-box {
-      max-height: 150px;
-      overflow: auto;
-      background: #f9fafb;
-      border-radius: 10px;
-      padding: 10px;
-    }
-
-    body.landscape .log-line {
-      margin: 0 0 5px;
-      font-size: 13px;
-      color: #4b5563;
-      word-break: break-word;
-    }
-
-    /* =========================
-       세로형 TV UI
-       ========================= */
     body.portrait {
       align-items: flex-start;
       justify-content: center;
@@ -178,11 +125,6 @@
       border-radius: 36px;
       box-shadow: 0 18px 50px rgba(0, 0, 0, 0.12);
       padding: 48px;
-      min-height: auto;
-    }
-
-    body.portrait .infoArea {
-      display: block;
     }
 
     body.portrait h1 {
@@ -210,9 +152,7 @@
       word-break: break-word;
     }
 
-    body.portrait .field {
-      margin-bottom: 30px;
-    }
+    body.portrait .field { margin-bottom: 30px; }
 
     body.portrait .label {
       display: block;
@@ -251,37 +191,6 @@
       min-height: 38px;
     }
 
-    body.portrait .debug {
-      margin-top: 36px;
-      padding-top: 28px;
-      border-top: 1px solid #e5e7eb;
-    }
-
-    body.portrait .debug-title {
-      margin: 0 0 14px;
-      font-size: 24px;
-      font-weight: 800;
-      color: #374151;
-    }
-
-    body.portrait .log-box {
-      max-height: 280px;
-      overflow: auto;
-      background: #f9fafb;
-      border-radius: 20px;
-      padding: 18px;
-    }
-
-    body.portrait .log-line {
-      margin: 0 0 10px;
-      font-size: 20px;
-      color: #4b5563;
-      word-break: break-word;
-    }
-
-    /* =========================
-       공통
-       ========================= */
     .input:focus,
     .btn:focus {
       border-color: #fb923c;
@@ -310,18 +219,10 @@
 <body>
   <div class="container">
     <div class="card">
-      <div class="infoArea">
-        <div>
-          <h1>로그인</h1>
-          <p class="sub">계정에 접속해 서비스를 시작하세요</p>
-
-          <div id="status" class="status">초기화 중...</div>
-        </div>
-
-        <div class="debug">
-          <p class="debug-title">디버그 로그</p>
-          <div id="logBox" class="log-box"></div>
-        </div>
+      <div>
+        <h1>로그인</h1>
+        <p class="sub">계정에 접속해 서비스를 시작하세요</p>
+        <div id="status" class="status">초기화 중...</div>
       </div>
 
       <div id="formArea">
@@ -337,7 +238,6 @@
 
         <button id="loginBtn" class="btn btn-primary">로그인</button>
         <button id="clearBtn" class="btn btn-secondary">저장 정보 초기화</button>
-
         <p id="error" class="error"></p>
       </div>
     </div>
@@ -347,6 +247,10 @@
     (function () {
       var BASE_URL = 'https://infoon.vercel.app/api-proxy';
       var WEB_BASE_URL = 'https://infoon.vercel.app';
+
+      var AUTO_LOGIN_MAX_RETRY = 5;
+      var AUTO_LOGIN_RETRY_DELAY = 5000;
+      var REQUEST_TIMEOUT = 20000;
 
       var KEYS = {
         TOKEN: 'player_token',
@@ -359,30 +263,38 @@
 
       var statusEl = document.getElementById('status');
       var errorEl = document.getElementById('error');
-      var logBoxEl = document.getElementById('logBox');
       var emailEl = document.getElementById('email');
       var passwordEl = document.getElementById('password');
       var loginBtnEl = document.getElementById('loginBtn');
       var clearBtnEl = document.getElementById('clearBtn');
 
       function safeGet(key) {
-        try {
-          return localStorage.getItem(key);
-        } catch (e) {
-          return null;
-        }
+        try { return localStorage.getItem(key); } catch (e) { return null; }
       }
 
       function safeSet(key, value) {
-        try {
-          localStorage.setItem(key, value);
-        } catch (e) {}
+        try { localStorage.setItem(key, value); } catch (e) {}
       }
 
       function safeRemove(key) {
-        try {
-          localStorage.removeItem(key);
-        } catch (e) {}
+        try { localStorage.removeItem(key); } catch (e) {}
+      }
+
+      function clearStorage() {
+        safeRemove(KEYS.TOKEN);
+        safeRemove(KEYS.DEVICE_ID);
+        safeRemove(KEYS.EMAIL);
+        safeRemove(KEYS.PASSWORD);
+        safeRemove(KEYS.USER);
+        safeRemove(KEYS.ORIENTATION);
+      }
+
+      function setStatus(text) {
+        statusEl.textContent = text;
+      }
+
+      function setError(text) {
+        errorEl.textContent = text || '';
       }
 
       function getQueryParam(name) {
@@ -416,48 +328,8 @@
         document.body.className = orientation;
 
         safeSet(KEYS.ORIENTATION, orientation);
-        log('[ORIENTATION] ' + orientation + ' / ' + window.innerWidth + 'x' + window.innerHeight);
 
         return orientation;
-      }
-
-      function setStatus(text) {
-        statusEl.textContent = text;
-        log('[STATUS] ' + text);
-      }
-
-      function setError(text) {
-        errorEl.textContent = text || '';
-        if (text) {
-          log('[ERROR] ' + text);
-        }
-      }
-
-      function log(text) {
-        try {
-          console.log('[TV LOGIN]', text);
-        } catch (e) {}
-
-        if (!logBoxEl) return;
-
-        var p = document.createElement('p');
-        p.className = 'log-line';
-        p.textContent = text;
-        logBoxEl.appendChild(p);
-        logBoxEl.scrollTop = logBoxEl.scrollHeight;
-
-        while (logBoxEl.children.length > 80) {
-          logBoxEl.removeChild(logBoxEl.children[0]);
-        }
-      }
-
-      function clearStorage() {
-        safeRemove(KEYS.TOKEN);
-        safeRemove(KEYS.DEVICE_ID);
-        safeRemove(KEYS.EMAIL);
-        safeRemove(KEYS.PASSWORD);
-        safeRemove(KEYS.USER);
-        safeRemove(KEYS.ORIENTATION);
       }
 
       function isInvalidValue(value) {
@@ -474,17 +346,19 @@
             reject(new Error(label + '_TIMEOUT'));
           }, ms);
 
-          promise.then(function (value) {
-            if (done) return;
-            done = true;
-            clearTimeout(timer);
-            resolve(value);
-          }).catch(function (err) {
-            if (done) return;
-            done = true;
-            clearTimeout(timer);
-            reject(err);
-          });
+          promise
+            .then(function (value) {
+              if (done) return;
+              done = true;
+              clearTimeout(timer);
+              resolve(value);
+            })
+            .catch(function (err) {
+              if (done) return;
+              done = true;
+              clearTimeout(timer);
+              reject(err);
+            });
         });
       }
 
@@ -497,14 +371,12 @@
         if (token) {
           headers['Authorization'] = 'Bearer ' + token;
         }
-        log('FETCH URL: ' + BASE_URL + path);
+
         return fetch(BASE_URL + path, {
           method: finalOptions.method || 'GET',
           headers: headers,
           body: finalOptions.body
         }).then(function (res) {
-          log('HTTP ' + res.status + ' ' + path);
-
           return res.text().then(function (text) {
             var data = null;
 
@@ -515,7 +387,6 @@
             }
 
             if (!res.ok) {
-              log('response error body: ' + String(text));
               throw new Error('HTTP_' + res.status);
             }
 
@@ -563,9 +434,7 @@
               modelName: modelCode
             };
           }
-        } catch (e) {
-          log('getDeviceHardwareInfo error: ' + String(e));
-        }
+        } catch (e) {}
 
         return {
           modelId: 'web',
@@ -620,7 +489,6 @@
         var savedDeviceId = safeGet(KEYS.DEVICE_ID);
 
         if (!isInvalidValue(savedDeviceId)) {
-          log('saved deviceId found: ' + savedDeviceId);
           redirectToPlay(savedDeviceId);
           return Promise.resolve();
         }
@@ -634,15 +502,6 @@
 
         setStatus('기기 등록 중...');
 
-        log('register payload: ' + JSON.stringify({
-          modelId: info.modelId,
-          modelName: info.modelName,
-          orientation: orientation,
-          organization: organization,
-          organizationType: organizationType,
-          userId: userId
-        }));
-
         return withTimeout(
           registerDevice(token, {
             modelId: info.modelId,
@@ -652,43 +511,29 @@
             organization_type: organizationType,
             userId: Number(userId)
           }),
-          7000,
+          REQUEST_TIMEOUT,
           'DEVICE_REGISTER'
         ).then(function (res) {
           var deviceId = getDeviceIdFromRegisterResponse(res);
 
           if (!deviceId) {
-            log('register response: ' + JSON.stringify(res));
             throw new Error('DEVICE_ID_NOT_FOUND');
           }
 
           safeSet(KEYS.DEVICE_ID, deviceId);
-          log('device registered: ' + deviceId);
           redirectToPlay(deviceId);
         });
       }
 
       function getLoginToken(res) {
-        if (res && res.data && res.data.token) {
-          return res.data.token;
-        }
-
-        if (res && res.token) {
-          return res.token;
-        }
-
+        if (res && res.data && res.data.token) return res.data.token;
+        if (res && res.token) return res.token;
         return '';
       }
 
       function getLoginUser(res) {
-        if (res && res.data && res.data.user) {
-          return res.data.user;
-        }
-
-        if (res && res.user) {
-          return res.user;
-        }
-
+        if (res && res.data && res.data.user) return res.data.user;
+        if (res && res.user) return res.user;
         return null;
       }
 
@@ -706,24 +551,17 @@
       }
 
       function tryAutoLogin() {
-        setStatus('자동 로그인 확인 중...');
-
         var savedEmail = safeGet(KEYS.EMAIL);
         var savedPassword = safeGet(KEYS.PASSWORD);
-
-        log('savedEmail: ' + (savedEmail || '(none)'));
-        log('savedPassword exists: ' + (!!savedPassword));
 
         if (isInvalidValue(savedEmail) || isInvalidValue(savedPassword)) {
           setStatus('로그인 정보를 입력해주세요');
           return Promise.resolve(false);
         }
 
-        setStatus('자동 로그인 시도 중...');
-
         return withTimeout(
           login(savedEmail, savedPassword),
-          7000,
+          REQUEST_TIMEOUT,
           'AUTO_LOGIN'
         ).then(function (res) {
           var token = getLoginToken(res);
@@ -742,13 +580,34 @@
           return registerAndRedirect(token, user).then(function () {
             return true;
           });
-        }).catch(function (err) {
-          clearStorage();
+        }).catch(function () {
           setStatus('자동 로그인 실패');
-          setError('자동 로그인에 실패했습니다. 다시 로그인해주세요.');
-          log('auto login error: ' + String(err));
           return false;
         });
+      }
+
+      function startAutoLoginWithRetry() {
+        var retryCount = 0;
+
+        function attempt() {
+          retryCount += 1;
+
+          setStatus('자동 로그인 시도 중... (' + retryCount + '/' + AUTO_LOGIN_MAX_RETRY + ')');
+
+          tryAutoLogin().then(function (done) {
+            if (done) return;
+
+            if (retryCount < AUTO_LOGIN_MAX_RETRY) {
+              setTimeout(attempt, AUTO_LOGIN_RETRY_DELAY);
+              return;
+            }
+
+            setStatus('로그인 정보를 입력해주세요');
+            emailEl.focus();
+          });
+        }
+
+        attempt();
       }
 
       function handleLogin() {
@@ -768,12 +627,13 @@
         }
 
         setStatus('로그인 요청 중...');
+
         loginBtnEl.disabled = true;
         loginBtnEl.textContent = '로그인 중...';
 
         withTimeout(
           login(email, password),
-          7000,
+          REQUEST_TIMEOUT,
           'MANUAL_LOGIN'
         ).then(function (res) {
           var token = getLoginToken(res);
@@ -791,12 +651,8 @@
           return registerAndRedirect(token, user).then(function () {
             resetLoginButton();
           });
-        }).catch(function (err) {
+        }).catch(function () {
           setError('로그인 중 오류가 발생했습니다.');
-          
-          log('manual login error name: ' + (err && err.name));
-log('manual login error message: ' + (err && err.message));
-log('manual login error stack: ' + (err && err.stack));
           resetLoginButton();
         });
       }
@@ -807,7 +663,6 @@ log('manual login error stack: ' + (err && err.stack));
         clearStorage();
         setError('저장된 정보를 초기화했습니다.');
         setStatus('로그인 정보를 입력해주세요');
-        log('storage cleared manually');
       });
 
       emailEl.addEventListener('keydown', function (e) {
@@ -833,29 +688,8 @@ log('manual login error stack: ' + (err && err.stack));
         applyOrientationClass();
       });
 
-      window.onerror = function (msg, src, line, col) {
-        log(
-          'window.onerror: ' +
-          String(msg) +
-          ' / ' +
-          String(src) +
-          ' / ' +
-          line +
-          ':' +
-          col
-        );
-      };
-
       applyOrientationClass();
-
-tryAutoLogin().then(function (done) {
-  if (!done) {
-    emailEl.focus();
-  }
-});
-
-
-
+      startAutoLoginWithRetry();
     })();
   </script>
 </body>
