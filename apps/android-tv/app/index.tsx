@@ -1,7 +1,6 @@
 import { StatusBar } from 'expo-status-bar';
 import {
   BackHandler,
-  Dimensions,
   Image,
   NativeModules,
   StyleSheet,
@@ -12,13 +11,12 @@ import { useCallback, useEffect, useState } from 'react';
 import * as NavigationBar from 'expo-navigation-bar';
 import * as ScreenOrientation from 'expo-screen-orientation';
 
-const START_URL = 'https://infoon.vercel.app/tv-login.html';
+const START_URL = 'https://www.info-on.cloud/tv-login.html';
 const PACKAGE_NAME = 'com.infoon.tv';
 
 const SPLASH_DURATION = 1800;
 
-const splashLandscape = require('../assets/images/splash-landscape.png');
-const splashPortrait = require('../assets/images/splash-portrait.png');
+const splashLogo = require('../assets/images/splash-logo.png');
 
 type QuberModuleType = {
   sendRequest?: (jsonMsg: string) => Promise<string>;
@@ -219,9 +217,6 @@ async function runQuberCommand(command: string) {
 export default function HomeScreen() {
   const [showSplash, setShowSplash] = useState(true);
 
-  const { width, height } = Dimensions.get('window');
-  const isLandscape = width >= height;
-
   const handleWebViewMessage = useCallback(async (event: WebViewMessageEvent) => {
     try {
       const rawData = event.nativeEvent.data;
@@ -270,11 +265,13 @@ export default function HomeScreen() {
       <StatusBar hidden />
 
       {showSplash ? (
-        <Image
-          source={isLandscape ? splashLandscape : splashPortrait}
-          style={styles.splashImage}
-          resizeMode="cover"
-        />
+        <View style={styles.splashContainer}>
+          <Image
+            source={splashLogo}
+            style={styles.splashLogo}
+            resizeMode="contain"
+          />
+        </View>
       ) : (
         <WebView
           source={{ uri: START_URL }}
@@ -307,10 +304,18 @@ const styles = StyleSheet.create({
     backgroundColor: '#000',
   },
 
-  splashImage: {
-    width: '100%',
-    height: '100%',
+  splashContainer: {
+    flex: 1,
     backgroundColor: '#000',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  splashLogo: {
+    width: '42%',
+    height: '42%',
+    maxWidth: 520,
+    maxHeight: 520,
   },
 
   webview: {
