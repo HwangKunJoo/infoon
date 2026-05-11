@@ -7,14 +7,18 @@ import {
   View,
 } from 'react-native';
 import { WebView, WebViewMessageEvent } from 'react-native-webview';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import * as NavigationBar from 'expo-navigation-bar';
 import * as ScreenOrientation from 'expo-screen-orientation';
+import { Pusher, PusherEvent } from '@pusher/pusher-websocket-react-native';
 
 const START_URL = 'https://www.info-on.cloud/tv-login.html';
 const PACKAGE_NAME = 'com.infoon.tv';
 
 const SPLASH_DURATION = 1800;
+
+const PUSHER_KEY = '여기에_PUSHER_KEY';
+const PUSHER_CLUSTER = '여기에_PUSHER_CLUSTER';
 
 const splashLogo = require('../assets/images/splash-logo.png');
 
@@ -26,6 +30,10 @@ type WebViewMessage =
   | {
       type: 'QUBER_COMMAND';
       command: string;
+    }
+  | {
+      type: 'DEVICE_ID_REGISTERED';
+      deviceId: string;
     }
   | {
       type: string;
@@ -95,18 +103,6 @@ async function setupAutoRun() {
   }
 }
 
-async function readInstalledApps() {
-  return sendQuberRequest('211033');
-}
-
-async function clearAutoRun() {
-  return sendQuberRequest('214002');
-}
-
-async function readAutoRun() {
-  return sendQuberRequest('211034');
-}
-
 async function turnTvOnByCec() {
   return sendQuberRequest('215031', {
     status: 'on',
@@ -119,24 +115,10 @@ async function turnTvStandbyByCec() {
   });
 }
 
-async function readTvPowerStatusByCec() {
-  return sendQuberRequest('211049');
-}
-
 async function setHdmiOutputOn() {
   return sendQuberRequest('213020', {
     onStatus: 'true',
   });
-}
-
-async function setHdmiOutputOff() {
-  return sendQuberRequest('213020', {
-    onStatus: 'false',
-  });
-}
-
-async function readDisplayStatus() {
-  return sendQuberRequest('111009');
 }
 
 async function rebootSetTopBox() {
@@ -159,6 +141,29 @@ async function scheduleTvWakeupInMinutes(minutes = 3) {
   ]);
 }
 
+async function runNativeCommand(command: string) {
+  console.log('[NATIVE COMMAND] command:', command);
+
+  switch (command) {
+    case 'tv-on':
+      await scheduleTvWakeupInMinutes(3);
+      await setHdmiOutputOn();
+      await turnTvOnByCec();
+      return;
+
+    case 'power-off':
+      await turnTvStandbyByCec();
+      return;
+
+    case 'reboot':
+      await rebootSetTopBox();
+      return;
+
+    default:
+      console.log('[NATIVE COMMAND] unknown command:', command);
+  }
+}
+
 async function runQuberCommand(command: string) {
   console.log('[QUBER] command:', command);
 
@@ -177,38 +182,6 @@ async function runQuberCommand(command: string) {
       await rebootSetTopBox();
       return;
 
-    case 'hdmi-on':
-      await setHdmiOutputOn();
-      return;
-
-    case 'hdmi-off':
-      await setHdmiOutputOff();
-      return;
-
-    case 'autorun-set':
-      await setupAutoRun();
-      return;
-
-    case 'autorun-clear':
-      await clearAutoRun();
-      return;
-
-    case 'autorun-read':
-      await readAutoRun();
-      return;
-
-    case 'installed-apps-read':
-      await readInstalledApps();
-      return;
-
-    case 'display-status-read':
-      await readDisplayStatus();
-      return;
-
-    case 'tv-power-status-read':
-      await readTvPowerStatusByCec();
-      return;
-
     default:
       console.log('[QUBER] unknown command:', command);
   }
@@ -216,11 +189,22 @@ async function runQuberCommand(command: string) {
 
 export default function HomeScreen() {
   const [showSplash, setShowSplash] = useState(true);
+  const [deviceId, setDeviceId] = useState<string | null>(null);
+
+  const nativeChannelRef = useRef<string | null>(null);
 
   const handleWebViewMessage = useCallback(async (event: WebViewMessageEvent) => {
     try {
       const rawData = event.nativeEvent.data;
       const data = JSON.parse(rawData) as WebViewMessage;
+
+      if (data.type === 'DEVICE_ID_REGISTERED' && 'deviceId' in data) {
+        const nextDeviceId = String(data.deviceId);
+
+        console.log('[DEVICE] registered:', nextDeviceId);
+        setDeviceId(nextDeviceId);
+        return;
+      }
 
       if (data.type === 'QUBER_COMMAND' && 'command' in data) {
         await runQuberCommand(String(data.command));
@@ -229,6 +213,66 @@ export default function HomeScreen() {
       console.log('[WEBVIEW] message parse failed:', error);
     }
   }, []);
+
+  useEffect(() => {
+    if (!deviceId) return;
+
+    let isActive = true;
+
+    async function setupNativePusher() {
+      try {
+        const channelName = `tv-native-status-${deviceId}`;
+
+        if (nativeChannelRef.current === channelName) {
+          return;
+        }
+
+        const pusher = Pusher.getInstance();
+
+        await pusher.init({
+          apiKey: PUSHER_KEY,
+          cluster: PUSHER_CLUSTER,
+          useTLS: true,
+          onConnectionStateChange: (currentState, previousState) => {
+            console.log(
+              '[NATIVE PUSHER] state:',
+              previousState,
+              '->',
+              currentState
+            );
+          },
+          onError: (message, code, error) => {
+            console.log('[NATIVE PUSHER] error:', message, code, error);
+          },
+        });
+
+        await pusher.connect();
+
+        await pusher.subscribe({
+          channelName,
+          onEvent: async (event: PusherEvent) => {
+            if (!isActive) return;
+
+            console.log('[NATIVE PUSHER] event:', event.eventName, event.data);
+
+            await runNativeCommand(event.eventName);
+          },
+        });
+
+        nativeChannelRef.current = channelName;
+
+        console.log('[NATIVE PUSHER] subscribed:', channelName);
+      } catch (error) {
+        console.log('[NATIVE PUSHER] setup failed:', error);
+      }
+    }
+
+    setupNativePusher();
+
+    return () => {
+      isActive = false;
+    };
+  }, [deviceId]);
 
   useEffect(() => {
     const timer = setTimeout(() => {

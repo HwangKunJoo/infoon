@@ -697,28 +697,6 @@
         playCurrent();
       }
 
-      function isAndroidWebView() {
-        return !!(
-          window.ReactNativeWebView &&
-          typeof window.ReactNativeWebView.postMessage === 'function'
-        );
-      }
-
-      function postNativeCommand(command) {
-        try {
-          if (!isAndroidWebView()) {
-            return;
-          }
-
-          window.ReactNativeWebView.postMessage(
-            JSON.stringify({
-              type: 'QUBER_COMMAND',
-              command: command
-            })
-          );
-        } catch (e) {}
-      }
-
       function initPusher() {
         if (!deviceId) return;
 
@@ -732,18 +710,6 @@
 
           channel.bind(PUSHER_EVENT, function () {
             refreshContents('pusher');
-          });
-
-          channel.bind('power-off', function () {
-            postNativeCommand('power-off');
-          });
-
-          channel.bind('tv-on', function () {
-            postNativeCommand('tv-on');
-          });
-
-          channel.bind('reboot', function () {
-            postNativeCommand('reboot');
           });
 
           pusherInstance.connection.bind('disconnected', function () {
