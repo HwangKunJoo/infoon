@@ -9,7 +9,10 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "runtimeVersion": {
+        "policy": "appVersion"
+      }
     },
     "android": {
       "package": "com.infoon.tv",
@@ -20,7 +23,11 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "permissions": ["INTERNET"]
+      "permissions": [
+        "INTERNET",
+        "INTERNET"
+      ],
+      "runtimeVersion": "1.0.0"
     },
     "web": {
       "output": "static",
@@ -47,6 +54,15 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "bf12677d-cf14-436c-8a1a-c2b4de125fd9"
+      }
+    },
+    "updates": {
+      "url": "https://u.expo.dev/bf12677d-cf14-436c-8a1a-c2b4de125fd9"
     }
   }
 }
