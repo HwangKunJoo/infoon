@@ -15,8 +15,8 @@ import { Pusher, PusherEvent } from "@pusher/pusher-websocket-react-native";
 const START_URL = "https://www.info-on.cloud/tv-login.html";
 const PACKAGE_NAME = "com.infoon.tv";
 
-const PUSHER_KEY = "여기에_PUSHER_KEY";
-const PUSHER_CLUSTER = "여기에_PUSHER_CLUSTER";
+const PUSHER_KEY = process.env.EXPO_PUBLIC_PUSHER_KEY!;
+const PUSHER_CLUSTER = process.env.EXPO_PUBLIC_PUSHER_CLUSTER!;
 
 type QuberModuleType = {
   sendRequest?: (jsonMsg: string) => Promise<string>;

@@ -8,12 +8,9 @@
   <script src="https://js.pusher.com/8.4.0/pusher.min.js"></script>
 
   <style>
-    * {
-      box-sizing: border-box;
-    }
+    * { box-sizing: border-box; }
 
-    html,
-    body {
+    html, body {
       width: 100%;
       height: 100%;
       margin: 0;
@@ -23,13 +20,7 @@
       font-family: Arial, Helvetica, sans-serif;
     }
 
-    body.landscape {
-      background: #000;
-    }
-
-    body.portrait {
-      background: #000;
-    }
+    body.landscape, body.portrait { background: #000; }
 
     #stage {
       position: relative;
@@ -39,8 +30,7 @@
       overflow: hidden;
     }
 
-    video,
-    img {
+    video, img {
       position: absolute;
       inset: 0;
       width: 100%;
@@ -51,20 +41,13 @@
       transition: opacity 0.45s ease;
     }
 
-    video.show,
-    img.show {
-      opacity: 1;
-    }
+    video.show, img.show { opacity: 1; }
 
     body.landscape video,
-    body.landscape img {
-      object-fit: contain;
-    }
+    body.landscape img { object-fit: contain; }
 
     body.portrait video,
-    body.portrait img {
-      object-fit: cover;
-    }
+    body.portrait img { object-fit: cover; }
 
     .empty {
       position: absolute;
@@ -113,9 +96,7 @@
       pointer-events: none;
     }
 
-    body.landscape .overlay {
-      display: none;
-    }
+    body.landscape .overlay { display: none; }
 
     body.portrait .overlay {
       display: block;
@@ -188,19 +169,14 @@
       var pusherInstance = null;
       var currentOrientation = null;
       var isRefreshing = false;
+      var currentVideoUrl = '';
 
       function safeGet(key) {
-        try {
-          return localStorage.getItem(key);
-        } catch (e) {
-          return null;
-        }
+        try { return localStorage.getItem(key); } catch (e) { return null; }
       }
 
       function safeSet(key, value) {
-        try {
-          localStorage.setItem(key, value);
-        } catch (e) {}
+        try { localStorage.setItem(key, value); } catch (e) {}
       }
 
       function getQueryParam(name) {
@@ -303,9 +279,7 @@
       }
 
       function fetchJson(path, token) {
-        var headers = {
-          'Content-Type': 'application/json'
-        };
+        var headers = { 'Content-Type': 'application/json' };
 
         if (token) {
           headers['Authorization'] = 'Bearer ' + token;
@@ -350,7 +324,6 @@
         if (content.file_url) return content.file_url;
         if (content.url) return content.url;
         if (content.path) return content.path;
-
         if (content.file && content.file.url) return content.file.url;
 
         if (
@@ -481,9 +454,7 @@
       }
 
       function refreshContents(reason) {
-        if (isRefreshing) {
-          return;
-        }
+        if (isRefreshing) return;
 
         isRefreshing = true;
         showLoading(true);
@@ -574,14 +545,21 @@
         videoEl.setAttribute('playsinline', 'true');
         videoEl.setAttribute('webkit-playsinline', 'true');
 
-        videoEl.src = url;
+        var shouldLoadNewVideo = currentVideoUrl !== url;
+
+        if (shouldLoadNewVideo) {
+          videoEl.src = url;
+          currentVideoUrl = url;
+        } else {
+          try {
+            videoEl.currentTime = 0;
+          } catch (e) {}
+        }
 
         var hasStartedPlay = false;
 
         function startPlay() {
-          if (hasStartedPlay) {
-            return;
-          }
+          if (hasStartedPlay) return;
 
           hasStartedPlay = true;
           showElement(videoEl);
@@ -616,17 +594,38 @@
         };
 
         videoEl.onended = function () {
+          if (contents.length === 1) {
+            try {
+              videoEl.currentTime = 0;
+              var replayPromise = videoEl.play();
+
+              if (replayPromise && typeof replayPromise.then === 'function') {
+                replayPromise.catch(function () {});
+              }
+            } catch (e) {
+              playNext();
+            }
+
+            return;
+          }
+
           playNext();
         };
 
         videoEl.onerror = function () {
+          currentVideoUrl = '';
           playNext();
         };
 
-        try {
-          videoEl.load();
-        } catch (e) {
-          playNext();
+        if (shouldLoadNewVideo) {
+          try {
+            videoEl.load();
+          } catch (e) {
+            currentVideoUrl = '';
+            playNext();
+          }
+        } else {
+          startPlay();
         }
 
         setTimeout(function () {
