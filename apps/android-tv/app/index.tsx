@@ -1,26 +1,22 @@
-import { StatusBar } from 'expo-status-bar';
+import { StatusBar } from "expo-status-bar";
 import {
   BackHandler,
   Image,
   NativeModules,
   StyleSheet,
   View,
-} from 'react-native';
-import { WebView, WebViewMessageEvent } from 'react-native-webview';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import * as NavigationBar from 'expo-navigation-bar';
-import * as ScreenOrientation from 'expo-screen-orientation';
-import { Pusher, PusherEvent } from '@pusher/pusher-websocket-react-native';
+} from "react-native";
+import { WebView, WebViewMessageEvent } from "react-native-webview";
+import { useCallback, useEffect, useRef, useState } from "react";
+import * as NavigationBar from "expo-navigation-bar";
+import * as ScreenOrientation from "expo-screen-orientation";
+import { Pusher, PusherEvent } from "@pusher/pusher-websocket-react-native";
 
-const START_URL = 'https://www.info-on.cloud/tv-login.html';
-const PACKAGE_NAME = 'com.infoon.tv';
+const START_URL = "https://www.info-on.cloud/tv-login.html";
+const PACKAGE_NAME = "com.infoon.tv";
 
-const SPLASH_DURATION = 1800;
-
-const PUSHER_KEY = '여기에_PUSHER_KEY';
-const PUSHER_CLUSTER = '여기에_PUSHER_CLUSTER';
-
-const splashLogo = require('../assets/images/splash-logo.png');
+const PUSHER_KEY = "여기에_PUSHER_KEY";
+const PUSHER_CLUSTER = "여기에_PUSHER_CLUSTER";
 
 type QuberModuleType = {
   sendRequest?: (jsonMsg: string) => Promise<string>;
@@ -28,11 +24,11 @@ type QuberModuleType = {
 
 type WebViewMessage =
   | {
-      type: 'QUBER_COMMAND';
+      type: "QUBER_COMMAND";
       command: string;
     }
   | {
-      type: 'DEVICE_ID_REGISTERED';
+      type: "DEVICE_ID_REGISTERED";
       deviceId: string;
     }
   | {
@@ -44,7 +40,7 @@ const QuberModule = NativeModules.QuberModule as QuberModuleType | undefined;
 
 function makeRequestId() {
   const now = new Date();
-  const pad = (n: number, len = 2) => String(n).padStart(len, '0');
+  const pad = (n: number, len = 2) => String(n).padStart(len, "0");
 
   return (
     now.getFullYear().toString() +
@@ -59,11 +55,11 @@ function makeRequestId() {
 
 async function sendQuberRequest(
   cmdCode: string,
-  params?: Record<string, unknown> | unknown[]
+  params?: Record<string, unknown> | unknown[],
 ) {
   try {
-    if (!QuberModule || typeof QuberModule.sendRequest !== 'function') {
-      console.log('[QUBER] QuberModule not available');
+    if (!QuberModule || typeof QuberModule.sendRequest !== "function") {
+      console.log("[QUBER] QuberModule not available");
       return null;
     }
 
@@ -78,141 +74,143 @@ async function sendQuberRequest(
 
     const response = await QuberModule.sendRequest(JSON.stringify(payload));
 
-    console.log('[QUBER] response:', response);
+    console.log("[QUBER] response:", response);
 
     return response;
   } catch (error) {
-    console.log('[QUBER] request failed:', error);
+    console.log("[QUBER] request failed:", error);
     return null;
   }
 }
 
 async function setupAutoRun() {
   try {
-    const setResult = await sendQuberRequest('213019', {
+    const setResult = await sendQuberRequest("213019", {
       packageName: PACKAGE_NAME,
     });
 
-    console.log('[QUBER] AutoRun set:', setResult);
+    console.log("[QUBER] AutoRun set:", setResult);
 
-    const readResult = await sendQuberRequest('211034');
+    const readResult = await sendQuberRequest("211034");
 
-    console.log('[QUBER] AutoRun read:', readResult);
+    console.log("[QUBER] AutoRun read:", readResult);
   } catch (error) {
-    console.log('[QUBER] AutoRun setup failed:', error);
+    console.log("[QUBER] AutoRun setup failed:", error);
   }
 }
 
 async function turnTvOnByCec() {
-  return sendQuberRequest('215031', {
-    status: 'on',
+  return sendQuberRequest("215031", {
+    status: "on",
   });
 }
 
 async function turnTvStandbyByCec() {
-  return sendQuberRequest('215031', {
-    status: 'standby',
+  return sendQuberRequest("215031", {
+    status: "standby",
   });
 }
 
 async function setHdmiOutputOn() {
-  return sendQuberRequest('213020', {
-    onStatus: 'true',
+  return sendQuberRequest("213020", {
+    onStatus: "true",
   });
 }
 
 async function rebootSetTopBox() {
-  return sendQuberRequest('215001');
+  return sendQuberRequest("215001");
 }
 
 async function scheduleTvWakeupInMinutes(minutes = 3) {
   const next = new Date(Date.now() + minutes * 60_000);
   const dayOfWeek = next.getDay() === 0 ? 1 : next.getDay() + 1;
-  const hh = String(next.getHours()).padStart(2, '0');
-  const mm = String(next.getMinutes()).padStart(2, '0');
+  const hh = String(next.getHours()).padStart(2, "0");
+  const mm = String(next.getMinutes()).padStart(2, "0");
 
-  return sendQuberRequest('213004', [
+  return sendQuberRequest("213004", [
     {
       dayOfWeek,
-      rebootTime: '-1',
-      sleepTime: '-1',
+      rebootTime: "-1",
+      sleepTime: "-1",
       wakeupTime: `${hh}:${mm}`,
     },
   ]);
 }
 
 async function runNativeCommand(command: string) {
-  console.log('[NATIVE COMMAND] command:', command);
+  console.log("[NATIVE COMMAND] command:", command);
 
   switch (command) {
-    case 'tv-on':
+    case "tv-on":
       await scheduleTvWakeupInMinutes(3);
       await setHdmiOutputOn();
       await turnTvOnByCec();
       return;
 
-    case 'power-off':
+    case "power-off":
       await turnTvStandbyByCec();
       return;
 
-    case 'reboot':
+    case "reboot":
       await rebootSetTopBox();
       return;
 
     default:
-      console.log('[NATIVE COMMAND] unknown command:', command);
+      console.log("[NATIVE COMMAND] unknown command:", command);
   }
 }
 
 async function runQuberCommand(command: string) {
-  console.log('[QUBER] command:', command);
+  console.log("[QUBER] command:", command);
 
   switch (command) {
-    case 'tv-on':
+    case "tv-on":
       await scheduleTvWakeupInMinutes(3);
       await setHdmiOutputOn();
       await turnTvOnByCec();
       return;
 
-    case 'power-off':
+    case "power-off":
       await turnTvStandbyByCec();
       return;
 
-    case 'reboot':
+    case "reboot":
       await rebootSetTopBox();
       return;
 
     default:
-      console.log('[QUBER] unknown command:', command);
+      console.log("[QUBER] unknown command:", command);
   }
 }
 
 export default function HomeScreen() {
-  const [showSplash, setShowSplash] = useState(true);
   const [deviceId, setDeviceId] = useState<string | null>(null);
 
   const nativeChannelRef = useRef<string | null>(null);
 
-  const handleWebViewMessage = useCallback(async (event: WebViewMessageEvent) => {
-    try {
-      const rawData = event.nativeEvent.data;
-      const data = JSON.parse(rawData) as WebViewMessage;
+  const handleWebViewMessage = useCallback(
+    async (event: WebViewMessageEvent) => {
+      try {
+        const rawData = event.nativeEvent.data;
+        const data = JSON.parse(rawData) as WebViewMessage;
 
-      if (data.type === 'DEVICE_ID_REGISTERED' && 'deviceId' in data) {
-        const nextDeviceId = String(data.deviceId);
+        if (data.type === "DEVICE_ID_REGISTERED" && "deviceId" in data) {
+          const nextDeviceId = String(data.deviceId);
 
-        console.log('[DEVICE] registered:', nextDeviceId);
-        setDeviceId(nextDeviceId);
-        return;
+          console.log("[DEVICE] registered:", nextDeviceId);
+          setDeviceId(nextDeviceId);
+          return;
+        }
+
+        if (data.type === "QUBER_COMMAND" && "command" in data) {
+          await runQuberCommand(String(data.command));
+        }
+      } catch (error) {
+        console.log("[WEBVIEW] message parse failed:", error);
       }
-
-      if (data.type === 'QUBER_COMMAND' && 'command' in data) {
-        await runQuberCommand(String(data.command));
-      }
-    } catch (error) {
-      console.log('[WEBVIEW] message parse failed:', error);
-    }
-  }, []);
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!deviceId) return;
@@ -235,14 +233,14 @@ export default function HomeScreen() {
           useTLS: true,
           onConnectionStateChange: (currentState, previousState) => {
             console.log(
-              '[NATIVE PUSHER] state:',
+              "[NATIVE PUSHER] state:",
               previousState,
-              '->',
-              currentState
+              "->",
+              currentState,
             );
           },
           onError: (message, code, error) => {
-            console.log('[NATIVE PUSHER] error:', message, code, error);
+            console.log("[NATIVE PUSHER] error:", message, code, error);
           },
         });
 
@@ -253,7 +251,7 @@ export default function HomeScreen() {
           onEvent: async (event: PusherEvent) => {
             if (!isActive) return;
 
-            console.log('[NATIVE PUSHER] event:', event.eventName, event.data);
+            console.log("[NATIVE PUSHER] event:", event.eventName, event.data);
 
             await runNativeCommand(event.eventName);
           },
@@ -261,9 +259,9 @@ export default function HomeScreen() {
 
         nativeChannelRef.current = channelName;
 
-        console.log('[NATIVE PUSHER] subscribed:', channelName);
+        console.log("[NATIVE PUSHER] subscribed:", channelName);
       } catch (error) {
-        console.log('[NATIVE PUSHER] setup failed:', error);
+        console.log("[NATIVE PUSHER] setup failed:", error);
       }
     }
 
@@ -275,28 +273,18 @@ export default function HomeScreen() {
   }, [deviceId]);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setShowSplash(false);
-    }, SPLASH_DURATION);
-
-    return () => {
-      clearTimeout(timer);
-    };
-  }, []);
-
-  useEffect(() => {
     ScreenOrientation.lockAsync(
-      ScreenOrientation.OrientationLock.LANDSCAPE
+      ScreenOrientation.OrientationLock.LANDSCAPE,
     ).catch(() => {});
 
-    NavigationBar.setVisibilityAsync('hidden').catch(() => {});
-    NavigationBar.setBehaviorAsync('overlay-swipe').catch(() => {});
+    NavigationBar.setVisibilityAsync("hidden").catch(() => {});
+    NavigationBar.setBehaviorAsync("overlay-swipe").catch(() => {});
 
     setupAutoRun();
 
     const subscription = BackHandler.addEventListener(
-      'hardwareBackPress',
-      () => true
+      "hardwareBackPress",
+      () => true,
     );
 
     return () => {
@@ -308,36 +296,26 @@ export default function HomeScreen() {
     <View style={styles.container}>
       <StatusBar hidden />
 
-      {showSplash ? (
-        <View style={styles.splashContainer}>
-          <Image
-            source={splashLogo}
-            style={styles.splashLogo}
-            resizeMode="contain"
-          />
-        </View>
-      ) : (
-        <WebView
-          source={{ uri: START_URL }}
-          style={styles.webview}
-          javaScriptEnabled
-          domStorageEnabled
-          mediaPlaybackRequiresUserAction={false}
-          allowsFullscreenVideo
-          allowsInlineMediaPlayback
-          mixedContentMode="always"
-          androidLayerType="hardware"
-          setSupportMultipleWindows={false}
-          originWhitelist={['*']}
-          onMessage={handleWebViewMessage}
-          onError={(event) => {
-            console.log('[WEBVIEW] error:', event.nativeEvent);
-          }}
-          onHttpError={(event) => {
-            console.log('[WEBVIEW] http error:', event.nativeEvent);
-          }}
-        />
-      )}
+      <WebView
+        source={{ uri: START_URL }}
+        style={styles.webview}
+        javaScriptEnabled
+        domStorageEnabled
+        mediaPlaybackRequiresUserAction={false}
+        allowsFullscreenVideo
+        allowsInlineMediaPlayback
+        mixedContentMode="always"
+        androidLayerType="hardware"
+        setSupportMultipleWindows={false}
+        originWhitelist={["*"]}
+        onMessage={handleWebViewMessage}
+        onError={(event) => {
+          console.log("[WEBVIEW] error:", event.nativeEvent);
+        }}
+        onHttpError={(event) => {
+          console.log("[WEBVIEW] http error:", event.nativeEvent);
+        }}
+      />
     </View>
   );
 }
@@ -345,25 +323,11 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000',
-  },
-
-  splashContainer: {
-    flex: 1,
-    backgroundColor: '#000',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  splashLogo: {
-    width: '42%',
-    height: '42%',
-    maxWidth: 520,
-    maxHeight: 520,
+    backgroundColor: "#000",
   },
 
   webview: {
     flex: 1,
-    backgroundColor: '#000',
+    backgroundColor: "#000",
   },
 });

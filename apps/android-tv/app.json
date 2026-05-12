@@ -8,12 +8,6 @@
     "scheme": "androidtv",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
-    "ios": {
-      "supportsTablet": true,
-      "runtimeVersion": {
-        "policy": "appVersion"
-      }
-    },
     "android": {
       "package": "com.infoon.tv",
       "adaptiveIcon": {
@@ -23,15 +17,8 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "permissions": [
-        "INTERNET",
-        "INTERNET"
-      ],
+      "permissions": ["INTERNET"],
       "runtimeVersion": "1.0.0"
-    },
-    "web": {
-      "output": "static",
-      "favicon": "./assets/images/icon-192.png"
     },
     "plugins": [
       "expo-router",
