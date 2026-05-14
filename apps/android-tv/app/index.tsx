@@ -19,6 +19,8 @@ const PACKAGE_NAME = "com.infoon.tv";
 const PUSHER_KEY = process.env.EXPO_PUBLIC_PUSHER_KEY!;
 const PUSHER_CLUSTER = process.env.EXPO_PUBLIC_PUSHER_CLUSTER!;
 
+let isCheckingUpdate = false;
+
 type QuberModuleType = {
   sendRequest?: (jsonMsg: string) => Promise<string>;
 };
@@ -64,6 +66,13 @@ function logUpdateInfo(prefix = "[EAS UPDATE]") {
 }
 
 async function checkAndApplyUpdate() {
+  if (isCheckingUpdate) {
+    console.log("[EAS UPDATE] already checking. skip.");
+    return;
+  }
+
+  isCheckingUpdate = true;
+
   try {
     if (__DEV__) {
       console.log("[EAS UPDATE] skipped in dev");
@@ -98,6 +107,8 @@ async function checkAndApplyUpdate() {
     await Updates.reloadAsync();
   } catch (error) {
     console.log("[EAS UPDATE] failed:", error);
+  } finally {
+    isCheckingUpdate = false;
   }
 }
 
@@ -329,9 +340,16 @@ export default function HomeScreen() {
 
     setupAutoRun();
 
-    const updateTimer = setTimeout(() => {
+    // 최초 실행 시 update 체크
+    const initialUpdateTimer = setTimeout(() => {
       checkAndApplyUpdate();
     }, 3000);
+
+    // 실행 중 주기적 update 체크
+    const updateInterval = setInterval(() => {
+      console.log("[EAS UPDATE] periodic check...");
+      checkAndApplyUpdate();
+    }, 1000 * 60 * 5);
 
     const subscription = BackHandler.addEventListener(
       "hardwareBackPress",
@@ -339,7 +357,8 @@ export default function HomeScreen() {
     );
 
     return () => {
-      clearTimeout(updateTimer);
+      clearTimeout(initialUpdateTimer);
+      clearInterval(updateInterval);
       subscription.remove();
     };
   }, []);
