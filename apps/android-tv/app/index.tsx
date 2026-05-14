@@ -12,7 +12,7 @@ import * as ScreenOrientation from "expo-screen-orientation";
 import { Pusher, PusherEvent } from "@pusher/pusher-websocket-react-native";
 import * as Updates from "expo-updates";
 
-const WEB_VERSION = "20260514-1";
+const WEB_VERSION = "20260514-2";
 const START_URL = `https://www.info-on.cloud/tv-login.html?v=${WEB_VERSION}`;
 const PACKAGE_NAME = "com.infoon.tv";
 
