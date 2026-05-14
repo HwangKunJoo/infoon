@@ -12,7 +12,7 @@ import * as ScreenOrientation from "expo-screen-orientation";
 import { Pusher, PusherEvent } from "@pusher/pusher-websocket-react-native";
 import * as Updates from "expo-updates";
 
-const WEB_VERSION = "20260514-2";
+const WEB_VERSION = "20260514-1";
 const START_URL = `https://www.info-on.cloud/tv-login.html?v=${WEB_VERSION}`;
 const PACKAGE_NAME = "com.infoon.tv";
 
@@ -196,29 +196,6 @@ async function scheduleTvWakeupInMinutes(minutes = 3) {
   ]);
 }
 
-async function runNativeCommand(command: string) {
-  console.log("[NATIVE COMMAND] command:", command);
-
-  switch (command) {
-    case "tv-on":
-      await scheduleTvWakeupInMinutes(3);
-      await setHdmiOutputOn();
-      await turnTvOnByCec();
-      return;
-
-    case "power-off":
-      await turnTvStandbyByCec();
-      return;
-
-    case "reboot":
-      await rebootSetTopBox();
-      return;
-
-    default:
-      console.log("[NATIVE COMMAND] unknown command:", command);
-  }
-}
-
 async function runQuberCommand(command: string) {
   console.log("[QUBER] command:", command);
 
@@ -245,6 +222,41 @@ async function runQuberCommand(command: string) {
 export default function HomeScreen() {
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const nativeChannelRef = useRef<string | null>(null);
+  const webViewRef = useRef<WebView>(null);
+
+  const handleNativeCommand = useCallback(async (command: string) => {
+    console.log("[NATIVE COMMAND] command:", command);
+
+    switch (command) {
+      case "reload-player":
+        console.log("[NATIVE COMMAND] reload WebView");
+        webViewRef.current?.reload();
+        return;
+
+      case "reload-app":
+        console.log("[NATIVE COMMAND] reload app");
+        await Updates.reloadAsync();
+        return;
+
+      case "tv-on":
+        await scheduleTvWakeupInMinutes(3);
+        await setHdmiOutputOn();
+        await turnTvOnByCec();
+        return;
+
+      case "power-off":
+        await turnTvStandbyByCec();
+        return;
+
+      case "reboot":
+        console.log("[NATIVE COMMAND] reboot set-top box");
+        await rebootSetTopBox();
+        return;
+
+      default:
+        console.log("[NATIVE COMMAND] unknown command:", command);
+    }
+  }, []);
 
   const handleWebViewMessage = useCallback(
     async (event: WebViewMessageEvent) => {
@@ -311,7 +323,7 @@ export default function HomeScreen() {
 
             console.log("[NATIVE PUSHER] event:", event.eventName, event.data);
 
-            await runNativeCommand(event.eventName);
+            await handleNativeCommand(event.eventName);
           },
         });
 
@@ -328,7 +340,7 @@ export default function HomeScreen() {
     return () => {
       isActive = false;
     };
-  }, [deviceId]);
+  }, [deviceId, handleNativeCommand]);
 
   useEffect(() => {
     ScreenOrientation.lockAsync(
@@ -340,12 +352,10 @@ export default function HomeScreen() {
 
     setupAutoRun();
 
-    // 최초 실행 시 update 체크
     const initialUpdateTimer = setTimeout(() => {
       checkAndApplyUpdate();
     }, 3000);
 
-    // 실행 중 주기적 update 체크
     const updateInterval = setInterval(() => {
       console.log("[EAS UPDATE] periodic check...");
       checkAndApplyUpdate();
@@ -370,6 +380,7 @@ export default function HomeScreen() {
       <StatusBar hidden />
 
       <WebView
+        ref={webViewRef}
         source={{ uri: START_URL }}
         style={styles.webview}
         javaScriptEnabled
