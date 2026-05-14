@@ -1,7 +1,6 @@
 import { StatusBar } from "expo-status-bar";
 import {
   BackHandler,
-  Image,
   NativeModules,
   StyleSheet,
   View,
@@ -13,7 +12,7 @@ import * as ScreenOrientation from "expo-screen-orientation";
 import { Pusher, PusherEvent } from "@pusher/pusher-websocket-react-native";
 import * as Updates from "expo-updates";
 
-const WEB_VERSION = "20260513-2";
+const WEB_VERSION = "20260514-1";
 const START_URL = `https://www.info-on.cloud/tv-login.html?v=${WEB_VERSION}`;
 const PACKAGE_NAME = "com.infoon.tv";
 
@@ -53,6 +52,53 @@ function makeRequestId() {
     pad(now.getSeconds()) +
     pad(now.getMilliseconds(), 3)
   );
+}
+
+function logUpdateInfo(prefix = "[EAS UPDATE]") {
+  console.log(`${prefix} isEnabled:`, Updates.isEnabled);
+  console.log(`${prefix} channel:`, Updates.channel);
+  console.log(`${prefix} runtimeVersion:`, Updates.runtimeVersion);
+  console.log(`${prefix} updateId:`, Updates.updateId);
+  console.log(`${prefix} createdAt:`, Updates.createdAt);
+  console.log(`${prefix} isEmbeddedLaunch:`, Updates.isEmbeddedLaunch);
+}
+
+async function checkAndApplyUpdate() {
+  try {
+    if (__DEV__) {
+      console.log("[EAS UPDATE] skipped in dev");
+      return;
+    }
+
+    logUpdateInfo();
+
+    if (!Updates.isEnabled) {
+      console.log("[EAS UPDATE] expo-updates is not enabled");
+      return;
+    }
+
+    console.log("[EAS UPDATE] checking...");
+
+    const update = await Updates.checkForUpdateAsync();
+
+    console.log("[EAS UPDATE] check result:", update);
+
+    if (!update.isAvailable) {
+      console.log("[EAS UPDATE] no update available");
+      return;
+    }
+
+    console.log("[EAS UPDATE] update available. fetching...");
+
+    const fetchResult = await Updates.fetchUpdateAsync();
+
+    console.log("[EAS UPDATE] fetch result:", fetchResult);
+    console.log("[EAS UPDATE] fetched. reloading app...");
+
+    await Updates.reloadAsync();
+  } catch (error) {
+    console.log("[EAS UPDATE] failed:", error);
+  }
 }
 
 async function sendQuberRequest(
@@ -98,33 +144,6 @@ async function setupAutoRun() {
     console.log("[QUBER] AutoRun read:", readResult);
   } catch (error) {
     console.log("[QUBER] AutoRun setup failed:", error);
-  }
-}
-
-async function checkAndApplyUpdate() {
-  try {
-    if (__DEV__) {
-      console.log("[EAS UPDATE] skipped in dev");
-      return;
-    }
-
-    const update = await Updates.checkForUpdateAsync();
-
-    console.log("[EAS UPDATE] check:", update);
-
-    if (!update.isAvailable) {
-      return;
-    }
-
-    console.log("[EAS UPDATE] update available. fetching...");
-
-    await Updates.fetchUpdateAsync();
-
-    console.log("[EAS UPDATE] fetched. reloading...");
-
-    await Updates.reloadAsync();
-  } catch (error) {
-    console.log("[EAS UPDATE] failed:", error);
   }
 }
 
@@ -214,7 +233,6 @@ async function runQuberCommand(command: string) {
 
 export default function HomeScreen() {
   const [deviceId, setDeviceId] = useState<string | null>(null);
-
   const nativeChannelRef = useRef<string | null>(null);
 
   const handleWebViewMessage = useCallback(
@@ -309,8 +327,11 @@ export default function HomeScreen() {
     NavigationBar.setVisibilityAsync("hidden").catch(() => {});
     NavigationBar.setBehaviorAsync("overlay-swipe").catch(() => {});
 
-    checkAndApplyUpdate();
     setupAutoRun();
+
+    const updateTimer = setTimeout(() => {
+      checkAndApplyUpdate();
+    }, 3000);
 
     const subscription = BackHandler.addEventListener(
       "hardwareBackPress",
@@ -318,10 +339,13 @@ export default function HomeScreen() {
     );
 
     return () => {
+      clearTimeout(updateTimer);
       subscription.remove();
     };
   }, []);
+
   console.log("[START_URL]", START_URL);
+
   return (
     <View style={styles.container}>
       <StatusBar hidden />
