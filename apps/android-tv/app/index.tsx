@@ -11,8 +11,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import * as NavigationBar from "expo-navigation-bar";
 import * as ScreenOrientation from "expo-screen-orientation";
 import { Pusher, PusherEvent } from "@pusher/pusher-websocket-react-native";
+import * as Updates from "expo-updates";
 
-const START_URL = "https://www.info-on.cloud/tv-login.html";
+const WEB_VERSION = "20260513-2";
+const START_URL = `https://www.info-on.cloud/tv-login.html?v=${WEB_VERSION}`;
 const PACKAGE_NAME = "com.infoon.tv";
 
 const PUSHER_KEY = process.env.EXPO_PUBLIC_PUSHER_KEY!;
@@ -96,6 +98,33 @@ async function setupAutoRun() {
     console.log("[QUBER] AutoRun read:", readResult);
   } catch (error) {
     console.log("[QUBER] AutoRun setup failed:", error);
+  }
+}
+
+async function checkAndApplyUpdate() {
+  try {
+    if (__DEV__) {
+      console.log("[EAS UPDATE] skipped in dev");
+      return;
+    }
+
+    const update = await Updates.checkForUpdateAsync();
+
+    console.log("[EAS UPDATE] check:", update);
+
+    if (!update.isAvailable) {
+      return;
+    }
+
+    console.log("[EAS UPDATE] update available. fetching...");
+
+    await Updates.fetchUpdateAsync();
+
+    console.log("[EAS UPDATE] fetched. reloading...");
+
+    await Updates.reloadAsync();
+  } catch (error) {
+    console.log("[EAS UPDATE] failed:", error);
   }
 }
 
@@ -280,6 +309,7 @@ export default function HomeScreen() {
     NavigationBar.setVisibilityAsync("hidden").catch(() => {});
     NavigationBar.setBehaviorAsync("overlay-swipe").catch(() => {});
 
+    checkAndApplyUpdate();
     setupAutoRun();
 
     const subscription = BackHandler.addEventListener(
@@ -291,7 +321,7 @@ export default function HomeScreen() {
       subscription.remove();
     };
   }, []);
-
+  console.log("[START_URL]", START_URL);
   return (
     <View style={styles.container}>
       <StatusBar hidden />

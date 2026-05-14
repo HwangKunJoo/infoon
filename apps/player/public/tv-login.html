@@ -488,16 +488,23 @@
 
       function redirectToPlay(deviceId) {
         var orientation = getOrientation();
+        var webVersion = getQueryParam('v') || '';
 
         setStatus('재생 화면으로 이동 중...');
 
         setTimeout(function () {
-          window.location.href =
+          var nextUrl =
             WEB_BASE_URL +
             '/tv-play.html?deviceId=' +
             encodeURIComponent(deviceId) +
             '&orientation=' +
             encodeURIComponent(orientation);
+
+          if (webVersion) {
+            nextUrl += '&v=' + encodeURIComponent(webVersion);
+          }
+
+          window.location.href = nextUrl;
         }, 300);
       }
 
