@@ -3,7 +3,7 @@
     "name": "Infoon TV",
     "slug": "android-tv",
     "version": "1.0.0",
-    "orientation": "landscape",
+      "orientation": "default",
     "icon": "./assets/images/icon-1024.png",
     "scheme": "androidtv",
     "userInterfaceStyle": "automatic",

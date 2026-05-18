@@ -1,10 +1,5 @@
 import { StatusBar } from "expo-status-bar";
-import {
-  BackHandler,
-  NativeModules,
-  StyleSheet,
-  View,
-} from "react-native";
+import { BackHandler, NativeModules, StyleSheet, View } from "react-native";
 import { WebView, WebViewMessageEvent } from "react-native-webview";
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as NavigationBar from "expo-navigation-bar";
@@ -343,9 +338,7 @@ export default function HomeScreen() {
   }, [deviceId, handleNativeCommand]);
 
   useEffect(() => {
-    ScreenOrientation.lockAsync(
-      ScreenOrientation.OrientationLock.LANDSCAPE,
-    ).catch(() => {});
+    ScreenOrientation.unlockAsync().catch(() => {});
 
     NavigationBar.setVisibilityAsync("hidden").catch(() => {});
     NavigationBar.setBehaviorAsync("overlay-swipe").catch(() => {});
@@ -356,10 +349,13 @@ export default function HomeScreen() {
       checkAndApplyUpdate();
     }, 3000);
 
-    const updateInterval = setInterval(() => {
-      console.log("[EAS UPDATE] periodic check...");
-      checkAndApplyUpdate();
-    }, 1000 * 60 * 5);
+    const updateInterval = setInterval(
+      () => {
+        console.log("[EAS UPDATE] periodic check...");
+        checkAndApplyUpdate();
+      },
+      1000 * 60 * 5,
+    );
 
     const subscription = BackHandler.addEventListener(
       "hardwareBackPress",
