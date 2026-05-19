@@ -374,6 +374,12 @@ export default function HomeScreen() {
   const recoveryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastStatusSentAtRef = useRef(0);
   const networkReadyRef = useRef(false);
+  const currentContentRef = useRef({
+    currentIndex: null as number | null,
+    contentsLength: null as number | null,
+    currentContentUrl: "",
+    currentContentType: "",
+  });
 
   const updateCurrentDeviceStatus = useCallback(
     async (reason: string, force = false) => {
@@ -406,6 +412,10 @@ export default function HomeScreen() {
           webview: {
             isPlayerPage: isPlayerPageRef.current,
             reason,
+            currentIndex: currentContentRef.current.currentIndex,
+            contentsLength: currentContentRef.current.contentsLength,
+            currentContentUrl: currentContentRef.current.currentContentUrl,
+            currentContentType: currentContentRef.current.currentContentType,
           },
           quber: quberStatus.quber,
           network: quberStatus.network,
@@ -457,6 +467,10 @@ export default function HomeScreen() {
       webview: {
         isPlayerPage: false,
         lastError: reason,
+        currentIndex: currentContentRef.current.currentIndex,
+        contentsLength: currentContentRef.current.contentsLength,
+        currentContentUrl: currentContentRef.current.currentContentUrl,
+        currentContentType: currentContentRef.current.currentContentType,
       },
     });
 
@@ -466,7 +480,10 @@ export default function HomeScreen() {
   const reloadWebView = useCallback(
     (reason: string) => {
       if (!networkReadyRef.current) {
-        console.log("[WEBVIEW RECOVERY] network not ready. skip reload:", reason);
+        console.log(
+          "[WEBVIEW RECOVERY] network not ready. skip reload:",
+          reason,
+        );
 
         sendDeviceLog({
           deviceId: deviceIdRef.current,
@@ -502,6 +519,10 @@ export default function HomeScreen() {
         webview: {
           isPlayerPage: isPlayerPageRef.current,
           lastError: reason,
+          currentIndex: currentContentRef.current.currentIndex,
+          contentsLength: currentContentRef.current.contentsLength,
+          currentContentUrl: currentContentRef.current.currentContentUrl,
+          currentContentType: currentContentRef.current.currentContentType,
         },
       });
 
@@ -599,6 +620,25 @@ export default function HomeScreen() {
             currentUrlRef.current = data.url;
           }
 
+          currentContentRef.current = {
+            currentIndex:
+              typeof data.currentIndex === "number"
+                ? data.currentIndex
+                : null,
+            contentsLength:
+              typeof data.contentsLength === "number"
+                ? data.contentsLength
+                : null,
+            currentContentUrl:
+              typeof data.currentContentUrl === "string"
+                ? data.currentContentUrl
+                : "",
+            currentContentType:
+              typeof data.currentContentType === "string"
+                ? data.currentContentType
+                : "",
+          };
+
           if (data.deviceId) {
             const nextDeviceId = String(data.deviceId);
 
@@ -691,6 +731,10 @@ export default function HomeScreen() {
           webview: {
             isPlayerPage: isPlayerPageRef.current,
             reason: "NETWORK_CONNECTED",
+            currentIndex: currentContentRef.current.currentIndex,
+            contentsLength: currentContentRef.current.contentsLength,
+            currentContentUrl: currentContentRef.current.currentContentUrl,
+            currentContentType: currentContentRef.current.currentContentType,
           },
           network: {
             connectType: state.type,
@@ -731,6 +775,10 @@ export default function HomeScreen() {
           webview: {
             isPlayerPage: isPlayerPageRef.current,
             lastError: "NETWORK_DISCONNECTED",
+            currentIndex: currentContentRef.current.currentIndex,
+            contentsLength: currentContentRef.current.contentsLength,
+            currentContentUrl: currentContentRef.current.currentContentUrl,
+            currentContentType: currentContentRef.current.currentContentType,
           },
           network: {
             connectType: state.type,
@@ -983,6 +1031,11 @@ export default function HomeScreen() {
               webview: {
                 isPlayerPage: isPlayerPageRef.current,
                 lastError: message,
+                currentIndex: currentContentRef.current.currentIndex,
+                contentsLength: currentContentRef.current.contentsLength,
+                currentContentUrl: currentContentRef.current.currentContentUrl,
+                currentContentType:
+                  currentContentRef.current.currentContentType,
               },
             });
 
@@ -1010,6 +1063,11 @@ export default function HomeScreen() {
               webview: {
                 isPlayerPage: isPlayerPageRef.current,
                 lastError: message,
+                currentIndex: currentContentRef.current.currentIndex,
+                contentsLength: currentContentRef.current.contentsLength,
+                currentContentUrl: currentContentRef.current.currentContentUrl,
+                currentContentType:
+                  currentContentRef.current.currentContentType,
               },
             });
 
@@ -1035,6 +1093,11 @@ export default function HomeScreen() {
               webview: {
                 isPlayerPage: isPlayerPageRef.current,
                 lastError: "WEBVIEW_RENDER_PROCESS_GONE",
+                currentIndex: currentContentRef.current.currentIndex,
+                contentsLength: currentContentRef.current.contentsLength,
+                currentContentUrl: currentContentRef.current.currentContentUrl,
+                currentContentType:
+                  currentContentRef.current.currentContentType,
               },
             });
 

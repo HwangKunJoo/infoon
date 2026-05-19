@@ -1,10 +1,5 @@
 import { initializeApp, getApps } from "firebase/app";
-import {
-  getFirestore,
-  serverTimestamp,
-  doc,
-  setDoc,
-} from "firebase/firestore";
+import { getFirestore, serverTimestamp, doc, setDoc } from "firebase/firestore";
 
 const firebaseConfig = {
   apiKey: "AIzaSyDoKXJokKhiY5x-3zFoHFo8c4ISadFPQCE",
@@ -89,6 +84,10 @@ export async function updateDeviceStatus(params: {
     isPlayerPage?: boolean;
     lastError?: string | null;
     reason?: string;
+    currentIndex?: number | null;
+    contentsLength?: number | null;
+    currentContentUrl?: string;
+    currentContentType?: string;
   };
   quber?: {
     firmwareVersion?: unknown;
