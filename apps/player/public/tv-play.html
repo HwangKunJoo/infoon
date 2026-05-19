@@ -20,7 +20,10 @@
       font-family: Arial, Helvetica, sans-serif;
     }
 
-    body.landscape, body.portrait { background: #000; }
+    body.landscape,
+    body.portrait {
+      background: #000;
+    }
 
     #stage {
       position: relative;
@@ -30,7 +33,8 @@
       overflow: hidden;
     }
 
-    video, img {
+    video,
+    img {
       position: absolute;
       inset: 0;
       width: 100%;
@@ -41,13 +45,17 @@
       transition: opacity 0.45s ease;
     }
 
-    video.show, img.show { opacity: 1; }
+    video.show,
+    img.show {
+      opacity: 1;
+    }
 
     body.landscape video,
-    body.landscape img { object-fit: contain; }
-
+    body.landscape img,
     body.portrait video,
-    body.portrait img { object-fit: contain; }
+    body.portrait img {
+      object-fit: contain;
+    }
 
     .empty {
       position: absolute;
@@ -87,38 +95,6 @@
       font-size: 24px;
       padding: 16px 22px;
     }
-
-    .overlay {
-      position: absolute;
-      z-index: 18;
-      color: #fff;
-      display: none;
-      pointer-events: none;
-    }
-
-    body.landscape .overlay { display: none; }
-
-    body.portrait .overlay {
-      display: block;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      padding: 80px 56px 56px;
-      background: linear-gradient(to top, rgba(0, 0, 0, 0.82), rgba(0, 0, 0, 0));
-    }
-
-    .overlay-title {
-      font-size: 46px;
-      font-weight: 800;
-      line-height: 1.25;
-    }
-
-    .overlay-sub {
-      margin-top: 12px;
-      font-size: 28px;
-      line-height: 1.35;
-      color: rgba(255, 255, 255, 0.76);
-    }
   </style>
 </head>
 
@@ -133,11 +109,6 @@
     </div>
 
     <div id="loading" class="loading">갱신 중...</div>
-
-    <div id="overlay" class="overlay">
-      <div id="overlayTitle" class="overlay-title"></div>
-      <div id="overlaySub" class="overlay-sub"></div>
-    </div>
   </div>
 
   <script>
@@ -161,8 +132,6 @@
       var imageEl = document.getElementById('image');
       var emptyEl = document.getElementById('empty');
       var loadingEl = document.getElementById('loading');
-      var overlayTitleEl = document.getElementById('overlayTitle');
-      var overlaySubEl = document.getElementById('overlaySub');
 
       var deviceId = getDeviceId();
       var contents = [];
@@ -217,7 +186,9 @@
           return queryOrientation;
         }
 
-        return window.innerWidth >= window.innerHeight ? 'landscape' : 'portrait';
+        return window.innerWidth >= window.innerHeight
+          ? 'landscape'
+          : 'portrait';
       }
 
       function applyOrientationClass() {
@@ -228,7 +199,9 @@
           .replace('landscape', '')
           .replace('portrait', '');
 
-        document.body.className = document.body.className + ' ' + orientation;
+        document.body.className =
+          document.body.className + ' ' + orientation;
+
         safeSet(KEYS.ORIENTATION, orientation);
 
         return orientation;
@@ -246,7 +219,9 @@
         if (!el) return;
 
         el.style.display = 'block';
-        el.className = el.className.replace(/\bshow\b/g, '').replace(/\s+/g, ' ');
+        el.className = el.className
+          .replace(/\bshow\b/g, '')
+          .replace(/\s+/g, ' ');
 
         setTimeout(function () {
           if (el.className.indexOf('show') < 0) {
@@ -258,7 +233,9 @@
       function hideElement(el) {
         if (!el) return;
 
-        el.className = el.className.replace(/\bshow\b/g, '').replace(/\s+/g, ' ');
+        el.className = el.className
+          .replace(/\bshow\b/g, '')
+          .replace(/\s+/g, ' ');
 
         setTimeout(function () {
           if (el.className.indexOf('show') < 0) {
@@ -335,7 +312,10 @@
       function getDevicesArray(res) {
         if (res && res.data && res.data.length) return res.data;
         if (res && res.devices && res.devices.length) return res.devices;
-        if (res && res.data && res.data.data && res.data.data.length) return res.data.data;
+        if (res && res.data && res.data.data && res.data.data.length) {
+          return res.data.data;
+        }
+
         return [];
       }
 
@@ -379,8 +359,16 @@
         rawType = String(rawType).toLowerCase();
         url = String(url || '').toLowerCase();
 
-        if (rawType.indexOf('video') >= 0 || rawType === 'movie') return 'video';
-        if (rawType.indexOf('image') >= 0) return 'image';
+        if (
+          rawType.indexOf('video') >= 0 ||
+          rawType === 'movie'
+        ) {
+          return 'video';
+        }
+
+        if (rawType.indexOf('image') >= 0) {
+          return 'image';
+        }
 
         if (
           url.indexOf('.mp4') >= 0 ||
@@ -402,33 +390,6 @@
         }
 
         return 'image';
-      }
-
-      function getContentText(content, key) {
-        if (!content) return '';
-
-        if (content[key]) return content[key];
-
-        if (content.attributes && content.attributes[key]) {
-          return content.attributes[key];
-        }
-
-        return '';
-      }
-
-      function updateOverlay(item) {
-        var title =
-          getContentText(item, 'title') ||
-          getContentText(item, 'name') ||
-          '';
-
-        var sub =
-          getContentText(item, 'description') ||
-          getContentText(item, 'desc') ||
-          '';
-
-        overlayTitleEl.textContent = title;
-        overlaySubEl.textContent = sub;
       }
 
       function extractContents(res) {
@@ -466,7 +427,10 @@
               item[key] = originalItem[key];
             }
 
-            item.duration = Number(item.duration || playlistDuration || 5);
+            item.duration = Number(
+              item.duration || playlistDuration || 5
+            );
+
             result.push(item);
           }
         }
@@ -492,7 +456,6 @@
 
             if (!contents.length) {
               hidePlayers();
-              updateOverlay(null);
               showEmpty(true);
               return;
             }
@@ -503,7 +466,6 @@
           .catch(function () {
             if (!contents.length) {
               hidePlayers();
-              updateOverlay(null);
               showEmpty(true);
             }
           })
@@ -516,7 +478,6 @@
       function playCurrent() {
         if (!contents.length) {
           hidePlayers();
-          updateOverlay(null);
           showEmpty(true);
           return;
         }
@@ -528,8 +489,6 @@
         var item = contents[currentIndex];
         var url = getContentUrl(item);
         var type = getContentType(item, url);
-
-        updateOverlay(item);
 
         if (!url) {
           playNext();
@@ -567,6 +526,7 @@
         videoEl.autoplay = true;
         videoEl.controls = false;
         videoEl.playsInline = true;
+
         videoEl.setAttribute('playsinline', 'true');
         videoEl.setAttribute('webkit-playsinline', 'true');
 
@@ -580,12 +540,16 @@
           }
 
           hasStartedPlay = true;
+
           showElement(videoEl);
 
           try {
             var playPromise = videoEl.play();
 
-            if (playPromise && typeof playPromise.then === 'function') {
+            if (
+              playPromise &&
+              typeof playPromise.then === 'function'
+            ) {
               playPromise
                 .then(function () {
                   showElement(videoEl);
@@ -623,7 +587,10 @@
 
               var replayPromise = videoEl.play();
 
-              if (replayPromise && typeof replayPromise.then === 'function') {
+              if (
+                replayPromise &&
+                typeof replayPromise.then === 'function'
+              ) {
                 replayPromise.catch(function () {});
               }
             } catch (e) {
@@ -690,11 +657,13 @@
         preloadImage(url)
           .then(function () {
             imageEl.onload = function () {};
+
             imageEl.onerror = function () {
               playNext();
             };
 
             imageEl.src = url;
+
             showElement(imageEl);
 
             imageTimer = setTimeout(function () {
@@ -733,17 +702,20 @@
             refreshContents('pusher');
           });
 
-          pusherInstance.connection.bind('disconnected', function () {
-            try {
-              pusherInstance.disconnect();
-            } catch (e) {}
+          pusherInstance.connection.bind(
+            'disconnected',
+            function () {
+              try {
+                pusherInstance.disconnect();
+              } catch (e) {}
 
-            pusherInstance = null;
+              pusherInstance = null;
 
-            setTimeout(function () {
-              initPusher();
-            }, 3000);
-          });
+              setTimeout(function () {
+                initPusher();
+              }, 3000);
+            }
+          );
 
           pusherInstance.connection.bind('error', function () {});
         } catch (e) {
@@ -769,9 +741,12 @@
         if (!deviceId) {
           setTimeout(function () {
             try {
-              window.location.replace('https://www.info-on.cloud/tv-login.html');
+              window.location.replace(
+                'https://www.info-on.cloud/tv-login.html'
+              );
             } catch (e) {
-              window.location.href = 'https://www.info-on.cloud/tv-login.html';
+              window.location.href =
+                'https://www.info-on.cloud/tv-login.html';
             }
           }, 500);
 
