@@ -127,9 +127,9 @@
       var SINGLE_VIDEO_REPLAY_LIMIT = 20;
 
       var HEARTBEAT_INTERVAL = 15000;
-      var VIDEO_LOAD_TIMEOUT = 20000;
-      var VIDEO_STALL_TIMEOUT = 30000;
-      var IMAGE_LOAD_TIMEOUT = 15000;
+      var VIDEO_LOAD_TIMEOUT = 3000;
+      var VIDEO_STALL_TIMEOUT = 3000;
+      var IMAGE_LOAD_TIMEOUT = 3000;
       var REQUEST_TIMEOUT = 20000;
 
       var KEYS = {
@@ -700,7 +700,7 @@
         videoEl.onsuspend = null;
 
         videoEl.className = videoEl.className.replace('show', '');
-        videoEl.style.display = 'block';
+        videoEl.style.display = 'none';
 
         videoEl.muted = true;
         videoEl.autoplay = true;
