@@ -6,6 +6,9 @@
   <title>인포온 TV 플레이어</title>
 
   <script src="https://js.pusher.com/8.4.0/pusher.min.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
+  <script src="/firebase-logger.js"></script>
 
   <style>
     * { box-sizing: border-box; }
@@ -114,6 +117,7 @@
   <script>
     (function () {
       var API_URL = 'https://info-on.cloud/api-proxy';
+      var LOGIN_URL = 'https://info-on.cloud/tv-login.html';
 
       var PUSHER_KEY = 'a707a1d344893077c43d';
       var PUSHER_CLUSTER = 'ap3';
@@ -121,6 +125,12 @@
 
       var IMAGE_DURATION_SECONDS = 15;
       var SINGLE_VIDEO_REPLAY_LIMIT = 20;
+
+      var HEARTBEAT_INTERVAL = 15000;
+      var VIDEO_LOAD_TIMEOUT = 20000;
+      var VIDEO_STALL_TIMEOUT = 30000;
+      var IMAGE_LOAD_TIMEOUT = 15000;
+      var REQUEST_TIMEOUT = 20000;
 
       var KEYS = {
         TOKEN: 'player_token',
@@ -138,22 +148,45 @@
       var currentIndex = 0;
       var imageTimer = null;
       var refreshTimer = null;
+      var heartbeatTimer = null;
+      var videoLoadTimer = null;
+      var videoStallTimer = null;
+      var imageLoadTimer = null;
       var pusherInstance = null;
       var currentOrientation = null;
       var isRefreshing = false;
       var singleVideoReplayCount = 0;
+      var currentContentUrl = '';
+      var currentContentType = '';
 
       function safeGet(key) {
-        try {
-          return localStorage.getItem(key);
-        } catch (e) {
-          return null;
-        }
+        try { return localStorage.getItem(key); } catch (e) { return null; }
       }
 
       function safeSet(key, value) {
+        try { localStorage.setItem(key, value); } catch (e) {}
+      }
+
+      function serializeError(error) {
+        if (!error) return 'UNKNOWN_ERROR';
+        if (typeof error === 'string') return error;
+        if (error.message) return String(error.message);
+        try { return JSON.stringify(error); } catch (e) { return String(error); }
+      }
+
+      function sendLog(eventType, level, message, payload) {
         try {
-          localStorage.setItem(key, value);
+          if (typeof window.sendPlayerLog !== 'function') return;
+
+          window.sendPlayerLog({
+            deviceId: deviceId || safeGet(KEYS.DEVICE_ID) || 'unknown',
+            eventType: eventType,
+            level: level || 'info',
+            message: message || '',
+            url: window.location.href,
+            source: 'tv-play-html',
+            payload: payload || {}
+          });
         } catch (e) {}
       }
 
@@ -171,6 +204,56 @@
         return null;
       }
 
+      function isNativeHeartbeatEnabled() {
+        return getQueryParam('nativeHeartbeat') === '1';
+      }
+
+      function postNativeMessage(data) {
+        try {
+          if (
+            window.ReactNativeWebView &&
+            typeof window.ReactNativeWebView.postMessage === 'function'
+          ) {
+            window.ReactNativeWebView.postMessage(JSON.stringify(data));
+          }
+        } catch (e) {}
+      }
+
+      function buildHeartbeatPayload() {
+        return {
+          type: 'PLAYER_HEARTBEAT',
+          deviceId: deviceId || 'unknown',
+          url: window.location.href,
+          currentIndex: currentIndex,
+          contentsLength: contents.length,
+          currentContentUrl: currentContentUrl,
+          currentContentType: currentContentType,
+          timestamp: Date.now()
+        };
+      }
+
+      function startHeartbeat() {
+        if (!isNativeHeartbeatEnabled()) {
+          sendLog('PLAYER_HEARTBEAT_DISABLED', 'info', 'native heartbeat disabled', {
+            nativeHeartbeat: getQueryParam('nativeHeartbeat') || ''
+          });
+          return;
+        }
+
+        if (heartbeatTimer) {
+          clearInterval(heartbeatTimer);
+          heartbeatTimer = null;
+        }
+
+        heartbeatTimer = setInterval(function () {
+          postNativeMessage(buildHeartbeatPayload());
+        }, HEARTBEAT_INTERVAL);
+
+        postNativeMessage(buildHeartbeatPayload());
+
+        sendLog('PLAYER_HEARTBEAT_ENABLED', 'info', 'native heartbeat enabled');
+      }
+
       function getDeviceId() {
         return getQueryParam('deviceId') || safeGet(KEYS.DEVICE_ID);
       }
@@ -186,9 +269,7 @@
           return queryOrientation;
         }
 
-        return window.innerWidth >= window.innerHeight
-          ? 'landscape'
-          : 'portrait';
+        return window.innerWidth >= window.innerHeight ? 'landscape' : 'portrait';
       }
 
       function applyOrientationClass() {
@@ -199,8 +280,7 @@
           .replace('landscape', '')
           .replace('portrait', '');
 
-        document.body.className =
-          document.body.className + ' ' + orientation;
+        document.body.className = document.body.className + ' ' + orientation;
 
         safeSet(KEYS.ORIENTATION, orientation);
 
@@ -244,6 +324,28 @@
         }, 450);
       }
 
+      function clearTimer(timerName) {
+        if (timerName === 'image' && imageTimer) {
+          clearTimeout(imageTimer);
+          imageTimer = null;
+        }
+
+        if (timerName === 'videoLoad' && videoLoadTimer) {
+          clearTimeout(videoLoadTimer);
+          videoLoadTimer = null;
+        }
+
+        if (timerName === 'videoStall' && videoStallTimer) {
+          clearTimeout(videoStallTimer);
+          videoStallTimer = null;
+        }
+
+        if (timerName === 'imageLoad' && imageLoadTimer) {
+          clearTimeout(imageLoadTimer);
+          imageLoadTimer = null;
+        }
+      }
+
       function clearImageSource() {
         try {
           imageEl.removeAttribute('src');
@@ -251,10 +353,10 @@
       }
 
       function hidePlayers() {
-        if (imageTimer) {
-          clearTimeout(imageTimer);
-          imageTimer = null;
-        }
+        clearTimer('image');
+        clearTimer('videoLoad');
+        clearTimer('videoStall');
+        clearTimer('imageLoad');
 
         try {
           videoEl.pause();
@@ -274,6 +376,32 @@
         return type === 'video';
       }
 
+      function withTimeout(promise, ms, label) {
+        return new Promise(function (resolve, reject) {
+          var done = false;
+
+          var timer = setTimeout(function () {
+            if (done) return;
+            done = true;
+            reject(new Error(label + '_TIMEOUT'));
+          }, ms);
+
+          promise
+            .then(function (value) {
+              if (done) return;
+              done = true;
+              clearTimeout(timer);
+              resolve(value);
+            })
+            .catch(function (error) {
+              if (done) return;
+              done = true;
+              clearTimeout(timer);
+              reject(error);
+            });
+        });
+      }
+
       function fetchJson(path, token) {
         var headers = {
           'Content-Type': 'application/json'
@@ -283,10 +411,14 @@
           headers['Authorization'] = 'Bearer ' + token;
         }
 
-        return fetch(API_URL + path, {
-          method: 'GET',
-          headers: headers
-        }).then(function (res) {
+        return withTimeout(
+          fetch(API_URL + path, {
+            method: 'GET',
+            headers: headers
+          }),
+          REQUEST_TIMEOUT,
+          'FETCH_' + path
+        ).then(function (res) {
           return res.text().then(function (text) {
             var data = null;
 
@@ -297,11 +429,23 @@
             }
 
             if (!res.ok) {
+              sendLog('PLAYER_API_HTTP_ERROR', 'error', 'HTTP_' + res.status, {
+                path: path,
+                status: res.status,
+                responseText: typeof text === 'string' ? text.slice(0, 500) : ''
+              });
+
               throw new Error('HTTP_' + res.status);
             }
 
             return data;
           });
+        }).catch(function (error) {
+          sendLog('PLAYER_API_FETCH_ERROR', 'error', serializeError(error), {
+            path: path
+          });
+
+          throw error;
         });
       }
 
@@ -359,10 +503,7 @@
         rawType = String(rawType).toLowerCase();
         url = String(url || '').toLowerCase();
 
-        if (
-          rawType.indexOf('video') >= 0 ||
-          rawType === 'movie'
-        ) {
+        if (rawType.indexOf('video') >= 0 || rawType === 'movie') {
           return 'video';
         }
 
@@ -396,6 +537,10 @@
         var devices = getDevicesArray(res);
 
         if (!devices.length || !deviceId) {
+          sendLog('PLAYER_DEVICE_NOT_FOUND', 'warn', 'device list empty or deviceId missing', {
+            hasDeviceId: !!deviceId,
+            devicesLength: devices.length
+          });
           return [];
         }
 
@@ -409,6 +554,9 @@
         }
 
         if (!matchedDevice || !matchedDevice.playlists) {
+          sendLog('PLAYER_PLAYLIST_NOT_FOUND', 'warn', 'matched device playlist not found', {
+            deviceId: deviceId
+          });
           return [];
         }
 
@@ -427,12 +575,15 @@
               item[key] = originalItem[key];
             }
 
-            item.duration = Number(
-              item.duration || playlistDuration || 5
-            );
-
+            item.duration = Number(item.duration || playlistDuration || 5);
             result.push(item);
           }
+        }
+
+        if (!result.length) {
+          sendLog('PLAYER_CONTENTS_EMPTY', 'warn', 'playlist has no contents', {
+            deviceId: deviceId
+          });
         }
 
         return result;
@@ -446,6 +597,10 @@
         isRefreshing = true;
         showLoading(true);
 
+        sendLog('PLAYER_REFRESH_START', 'info', 'refresh contents start', {
+          reason: reason || 'unknown'
+        });
+
         fetchDevices()
           .then(function (res) {
             var nextContents = extractContents(res);
@@ -453,6 +608,11 @@
             contents = nextContents;
             currentIndex = 0;
             singleVideoReplayCount = 0;
+
+            sendLog('PLAYER_REFRESH_SUCCESS', 'info', 'refresh contents success', {
+              reason: reason || 'unknown',
+              contentsLength: contents.length
+            });
 
             if (!contents.length) {
               hidePlayers();
@@ -463,7 +623,11 @@
             showEmpty(false);
             playCurrent();
           })
-          .catch(function () {
+          .catch(function (error) {
+            sendLog('PLAYER_REFRESH_ERROR', 'error', serializeError(error), {
+              reason: reason || 'unknown'
+            });
+
             if (!contents.length) {
               hidePlayers();
               showEmpty(true);
@@ -490,7 +654,15 @@
         var url = getContentUrl(item);
         var type = getContentType(item, url);
 
+        currentContentUrl = url || '';
+        currentContentType = type || '';
+
         if (!url) {
+          sendLog('CONTENT_URL_EMPTY', 'warn', 'content url empty', {
+            currentIndex: currentIndex,
+            item: item
+          });
+
           playNext();
           return;
         }
@@ -503,11 +675,15 @@
         }
       }
 
+      function moveNextWithLog(eventType, level, message, payload) {
+        sendLog(eventType, level, message, payload);
+        playNext();
+      }
+
       function playVideo(url) {
-        if (imageTimer) {
-          clearTimeout(imageTimer);
-          imageTimer = null;
-        }
+        clearTimer('image');
+        clearTimer('videoLoad');
+        clearTimer('videoStall');
 
         clearImageSource();
         hideElement(imageEl);
@@ -518,6 +694,10 @@
         videoEl.onloadeddata = null;
         videoEl.onended = null;
         videoEl.onerror = null;
+        videoEl.onwaiting = null;
+        videoEl.onstalled = null;
+        videoEl.onabort = null;
+        videoEl.onsuspend = null;
 
         videoEl.className = videoEl.className.replace('show', '');
         videoEl.style.display = 'block';
@@ -533,6 +713,45 @@
         videoEl.src = url;
 
         var hasStartedPlay = false;
+        var lastCurrentTime = 0;
+
+        videoLoadTimer = setTimeout(function () {
+          videoLoadTimer = null;
+
+          if (!hasStartedPlay) {
+            moveNextWithLog('VIDEO_LOAD_TIMEOUT', 'warn', 'video load timeout', {
+              url: url,
+              currentIndex: currentIndex
+            });
+          }
+        }, VIDEO_LOAD_TIMEOUT);
+
+        function resetStallTimer(reason) {
+          clearTimer('videoStall');
+
+          videoStallTimer = setTimeout(function () {
+            videoStallTimer = null;
+
+            var currentTime = 0;
+
+            try {
+              currentTime = Number(videoEl.currentTime || 0);
+            } catch (e) {}
+
+            if (hasStartedPlay && currentTime <= lastCurrentTime + 0.1) {
+              moveNextWithLog('VIDEO_STALL_TIMEOUT', 'warn', 'video stalled too long', {
+                url: url,
+                reason: reason || '',
+                currentTime: currentTime,
+                lastCurrentTime: lastCurrentTime,
+                currentIndex: currentIndex
+              });
+              return;
+            }
+
+            lastCurrentTime = currentTime;
+          }, VIDEO_STALL_TIMEOUT);
+        }
 
         function startPlay() {
           if (hasStartedPlay) {
@@ -540,23 +759,32 @@
           }
 
           hasStartedPlay = true;
+          clearTimer('videoLoad');
 
           showElement(videoEl);
 
           try {
             var playPromise = videoEl.play();
 
-            if (
-              playPromise &&
-              typeof playPromise.then === 'function'
-            ) {
+            if (playPromise && typeof playPromise.then === 'function') {
               playPromise
                 .then(function () {
                   showElement(videoEl);
+                  resetStallTimer('play_resolved');
                 })
-                .catch(function () {});
+                .catch(function (error) {
+                  moveNextWithLog('VIDEO_PLAY_PROMISE_ERROR', 'warn', serializeError(error), {
+                    url: url,
+                    currentIndex: currentIndex
+                  });
+                });
             }
-          } catch (e) {}
+          } catch (e) {
+            moveNextWithLog('VIDEO_PLAY_THROW_ERROR', 'warn', serializeError(e), {
+              url: url,
+              currentIndex: currentIndex
+            });
+          }
         }
 
         videoEl.onloadedmetadata = function () {
@@ -572,10 +800,47 @@
         };
 
         videoEl.onplaying = function () {
+          clearTimer('videoLoad');
           showElement(videoEl);
+          resetStallTimer('playing');
+        };
+
+        videoEl.onwaiting = function () {
+          sendLog('VIDEO_WAITING', 'warn', 'video waiting', {
+            url: url,
+            currentIndex: currentIndex,
+            currentTime: videoEl.currentTime || 0
+          });
+          resetStallTimer('waiting');
+        };
+
+        videoEl.onstalled = function () {
+          sendLog('VIDEO_STALLED', 'warn', 'video stalled', {
+            url: url,
+            currentIndex: currentIndex,
+            currentTime: videoEl.currentTime || 0
+          });
+          resetStallTimer('stalled');
+        };
+
+        videoEl.onabort = function () {
+          sendLog('VIDEO_ABORTED', 'warn', 'video aborted', {
+            url: url,
+            currentIndex: currentIndex
+          });
+        };
+
+        videoEl.onsuspend = function () {
+          sendLog('VIDEO_SUSPENDED', 'info', 'video suspended', {
+            url: url,
+            currentIndex: currentIndex
+          });
         };
 
         videoEl.onended = function () {
+          clearTimer('videoLoad');
+          clearTimer('videoStall');
+
           if (
             isSingleVideoContent() &&
             singleVideoReplayCount < SINGLE_VIDEO_REPLAY_LIMIT
@@ -587,15 +852,21 @@
 
               var replayPromise = videoEl.play();
 
-              if (
-                replayPromise &&
-                typeof replayPromise.then === 'function'
-              ) {
-                replayPromise.catch(function () {});
+              if (replayPromise && typeof replayPromise.then === 'function') {
+                replayPromise.catch(function (error) {
+                  singleVideoReplayCount = 0;
+                  moveNextWithLog('VIDEO_REPLAY_ERROR', 'warn', serializeError(error), {
+                    url: url,
+                    currentIndex: currentIndex
+                  });
+                });
               }
             } catch (e) {
               singleVideoReplayCount = 0;
-              playNext();
+              moveNextWithLog('VIDEO_REPLAY_THROW_ERROR', 'warn', serializeError(e), {
+                url: url,
+                currentIndex: currentIndex
+              });
             }
 
             return;
@@ -606,22 +877,42 @@
         };
 
         videoEl.onerror = function () {
+          clearTimer('videoLoad');
+          clearTimer('videoStall');
           singleVideoReplayCount = 0;
-          playNext();
+
+          var errorCode = null;
+
+          try {
+            errorCode = videoEl.error ? videoEl.error.code : null;
+          } catch (e) {}
+
+          moveNextWithLog('VIDEO_ERROR', 'error', 'video element error', {
+            url: url,
+            errorCode: errorCode,
+            currentIndex: currentIndex
+          });
         };
 
         try {
           videoEl.load();
         } catch (e) {
+          clearTimer('videoLoad');
           singleVideoReplayCount = 0;
-          playNext();
+
+          moveNextWithLog('VIDEO_LOAD_THROW_ERROR', 'error', serializeError(e), {
+            url: url,
+            currentIndex: currentIndex
+          });
         }
 
         setTimeout(function () {
           if (videoEl.paused) {
             startPlay();
           } else {
+            clearTimer('videoLoad');
             showElement(videoEl);
+            resetStallTimer('delayed_check');
           }
         }, 2000);
       }
@@ -630,11 +921,18 @@
         return new Promise(function (resolve, reject) {
           var img = new Image();
 
+          imageLoadTimer = setTimeout(function () {
+            imageLoadTimer = null;
+            reject(new Error('IMAGE_LOAD_TIMEOUT'));
+          }, IMAGE_LOAD_TIMEOUT);
+
           img.onload = function () {
+            clearTimer('imageLoad');
             resolve(url);
           };
 
           img.onerror = function () {
+            clearTimer('imageLoad');
             reject(new Error('IMAGE_PRELOAD_FAILED'));
           };
 
@@ -643,10 +941,10 @@
       }
 
       function playImage(url, duration) {
-        if (imageTimer) {
-          clearTimeout(imageTimer);
-          imageTimer = null;
-        }
+        clearTimer('image');
+        clearTimer('imageLoad');
+        clearTimer('videoLoad');
+        clearTimer('videoStall');
 
         try {
           videoEl.pause();
@@ -659,7 +957,10 @@
             imageEl.onload = function () {};
 
             imageEl.onerror = function () {
-              playNext();
+              moveNextWithLog('IMAGE_ELEMENT_ERROR', 'error', 'image element error', {
+                url: url,
+                currentIndex: currentIndex
+              });
             };
 
             imageEl.src = url;
@@ -670,8 +971,11 @@
               playNext();
             }, Math.max(1, duration) * 1000);
           })
-          .catch(function () {
-            playNext();
+          .catch(function (error) {
+            moveNextWithLog('IMAGE_PRELOAD_ERROR', 'error', serializeError(error), {
+              url: url,
+              currentIndex: currentIndex
+            });
           });
       }
 
@@ -699,26 +1003,42 @@
           var channel = pusherInstance.subscribe(channelName);
 
           channel.bind(PUSHER_EVENT, function () {
+            sendLog('PUSHER_REFRESH_RECEIVED', 'info', 'pusher refresh received', {
+              channelName: channelName
+            });
             refreshContents('pusher');
           });
 
-          pusherInstance.connection.bind(
-            'disconnected',
-            function () {
-              try {
-                pusherInstance.disconnect();
-              } catch (e) {}
+          pusherInstance.connection.bind('connected', function () {
+            sendLog('PUSHER_CONNECTED', 'info', 'pusher connected', {
+              channelName: channelName
+            });
+          });
 
-              pusherInstance = null;
+          pusherInstance.connection.bind('disconnected', function () {
+            sendLog('PUSHER_DISCONNECTED', 'warn', 'pusher disconnected', {
+              channelName: channelName
+            });
 
-              setTimeout(function () {
-                initPusher();
-              }, 3000);
-            }
-          );
+            try {
+              pusherInstance.disconnect();
+            } catch (e) {}
 
-          pusherInstance.connection.bind('error', function () {});
+            pusherInstance = null;
+
+            setTimeout(function () {
+              initPusher();
+            }, 3000);
+          });
+
+          pusherInstance.connection.bind('error', function (error) {
+            sendLog('PUSHER_ERROR', 'warn', serializeError(error), {
+              channelName: channelName
+            });
+          });
         } catch (e) {
+          sendLog('PUSHER_INIT_ERROR', 'error', serializeError(e));
+
           setTimeout(function () {
             initPusher();
           }, 3000);
@@ -734,20 +1054,32 @@
         });
       }
 
+      function redirectToLogin() {
+        try {
+          window.location.replace(LOGIN_URL);
+        } catch (e) {
+          window.location.href = LOGIN_URL;
+        }
+      }
+
       function init() {
         applyOrientationClass();
         initKeyEvents();
+        startHeartbeat();
+
+        sendLog('PLAYER_PAGE_LOADED', 'info', 'tv-play page loaded', {
+          userAgent: navigator.userAgent || '',
+          orientation: getOrientation(),
+          href: window.location.href,
+          deviceId: deviceId || '',
+          nativeHeartbeat: getQueryParam('nativeHeartbeat') || ''
+        });
 
         if (!deviceId) {
+          sendLog('PLAYER_DEVICE_ID_MISSING', 'error', 'deviceId missing. redirect to login');
+
           setTimeout(function () {
-            try {
-              window.location.replace(
-                'https://info-on.cloud/tv-login.html'
-              );
-            } catch (e) {
-              window.location.href =
-                'https://info-on.cloud/tv-login.html';
-            }
+            redirectToLogin();
           }, 500);
 
           return;
@@ -763,7 +1095,28 @@
         applyOrientationClass();
       });
 
-      window.onerror = function () {
+      window.addEventListener('online', function () {
+        sendLog('PLAYER_NETWORK_ONLINE', 'info', 'browser online event');
+        refreshContents('online');
+      });
+
+      window.addEventListener('offline', function () {
+        sendLog('PLAYER_NETWORK_OFFLINE', 'warn', 'browser offline event');
+      });
+
+      window.onerror = function (message, source, lineno, colno, error) {
+        sendLog('PLAYER_WINDOW_ERROR', 'error', serializeError(error || message), {
+          message: message,
+          source: source,
+          lineno: lineno,
+          colno: colno
+        });
+
+        return true;
+      };
+
+      window.onunhandledrejection = function (event) {
+        sendLog('PLAYER_UNHANDLED_REJECTION', 'error', serializeError(event && event.reason), {});
         return true;
       };
 
@@ -772,9 +1125,14 @@
           clearInterval(refreshTimer);
         }
 
-        if (imageTimer) {
-          clearTimeout(imageTimer);
+        if (heartbeatTimer) {
+          clearInterval(heartbeatTimer);
         }
+
+        clearTimer('image');
+        clearTimer('videoLoad');
+        clearTimer('videoStall');
+        clearTimer('imageLoad');
 
         try {
           if (pusherInstance) {

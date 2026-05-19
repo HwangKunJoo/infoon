@@ -243,6 +243,10 @@
     </div>
   </div>
 
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
+  <script src="/firebase-logger.js"></script>
+
   <script>
     (function () {
       var BASE_URL = 'https://info-on.cloud/api-proxy';
@@ -268,6 +272,45 @@
       var loginBtnEl = document.getElementById('loginBtn');
       var clearBtnEl = document.getElementById('clearBtn');
 
+      function safeGet(key) {
+        try { return localStorage.getItem(key); } catch (e) { return null; }
+      }
+
+      function safeSet(key, value) {
+        try { localStorage.setItem(key, value); } catch (e) {}
+      }
+
+      function safeRemove(key) {
+        try { localStorage.removeItem(key); } catch (e) {}
+      }
+
+      function getSavedDeviceId() {
+        return safeGet(KEYS.DEVICE_ID) || 'unknown';
+      }
+
+      function serializeError(error) {
+        if (!error) return 'UNKNOWN_ERROR';
+        if (typeof error === 'string') return error;
+        if (error.message) return String(error.message);
+        try { return JSON.stringify(error); } catch (e) { return String(error); }
+      }
+
+      function sendLog(eventType, level, message, payload) {
+        try {
+          if (typeof window.sendPlayerLog !== 'function') return;
+
+          window.sendPlayerLog({
+            deviceId: getSavedDeviceId(),
+            eventType: eventType,
+            level: level || 'info',
+            message: message || '',
+            url: window.location.href,
+            source: 'tv-login-html',
+            payload: payload || {}
+          });
+        } catch (e) {}
+      }
+
       function notifyNativeDeviceId(deviceId) {
         try {
           if (
@@ -280,20 +323,16 @@
                 deviceId: String(deviceId)
               })
             );
+
+            sendLog('DEVICE_ID_NOTIFIED_TO_NATIVE', 'info', 'deviceId sent to native app', {
+              deviceId: String(deviceId)
+            });
           }
-        } catch (e) {}
-      }
-
-      function safeGet(key) {
-        try { return localStorage.getItem(key); } catch (e) { return null; }
-      }
-
-      function safeSet(key, value) {
-        try { localStorage.setItem(key, value); } catch (e) {}
-      }
-
-      function safeRemove(key) {
-        try { localStorage.removeItem(key); } catch (e) {}
+        } catch (e) {
+          sendLog('DEVICE_ID_NOTIFY_NATIVE_ERROR', 'warn', serializeError(e), {
+            deviceId: String(deviceId)
+          });
+        }
       }
 
       function clearStorage() {
@@ -403,11 +442,24 @@
             }
 
             if (!res.ok) {
+              sendLog('LOGIN_API_HTTP_ERROR', 'error', 'HTTP_' + res.status, {
+                path: path,
+                status: res.status,
+                responseText: typeof text === 'string' ? text.slice(0, 500) : ''
+              });
+
               throw new Error('HTTP_' + res.status);
             }
 
             return data;
           });
+        }).catch(function (error) {
+          sendLog('LOGIN_API_FETCH_ERROR', 'error', serializeError(error), {
+            path: path,
+            method: finalOptions.method || 'GET'
+          });
+
+          throw error;
         });
       }
 
@@ -450,7 +502,9 @@
               modelName: modelCode
             };
           }
-        } catch (e) {}
+        } catch (e) {
+          sendLog('DEVICE_HARDWARE_INFO_ERROR', 'warn', serializeError(e));
+        }
 
         return {
           modelId: 'web',
@@ -489,8 +543,16 @@
       function redirectToPlay(deviceId) {
         var orientation = getOrientation();
         var webVersion = getQueryParam('v') || '';
+        var nativeHeartbeat = getQueryParam('nativeHeartbeat') || '';
 
         setStatus('재생 화면으로 이동 중...');
+
+        sendLog('LOGIN_REDIRECT_TO_PLAY', 'info', 'redirect to tv-play', {
+          deviceId: String(deviceId),
+          orientation: orientation,
+          webVersion: webVersion,
+          nativeHeartbeat: nativeHeartbeat
+        });
 
         setTimeout(function () {
           var nextUrl =
@@ -504,6 +566,10 @@
             nextUrl += '&v=' + encodeURIComponent(webVersion);
           }
 
+          if (nativeHeartbeat) {
+            nextUrl += '&nativeHeartbeat=' + encodeURIComponent(nativeHeartbeat);
+          }
+
           window.location.href = nextUrl;
         }, 300);
       }
@@ -511,7 +577,7 @@
       function registerAndRedirect(token, user) {
         var savedDeviceId = safeGet(KEYS.DEVICE_ID);
 
-       if (!isInvalidValue(savedDeviceId)) {
+        if (!isInvalidValue(savedDeviceId)) {
           notifyNativeDeviceId(savedDeviceId);
           redirectToPlay(savedDeviceId);
           return Promise.resolve();
@@ -541,12 +607,27 @@
           var deviceId = getDeviceIdFromRegisterResponse(res);
 
           if (!deviceId) {
+            sendLog('DEVICE_ID_NOT_FOUND', 'error', 'device id not found from register response', {
+              response: res
+            });
+
             throw new Error('DEVICE_ID_NOT_FOUND');
           }
 
           safeSet(KEYS.DEVICE_ID, deviceId);
           notifyNativeDeviceId(deviceId);
           redirectToPlay(deviceId);
+        }).catch(function (error) {
+          sendLog('DEVICE_REGISTER_ERROR', 'error', serializeError(error), {
+            orientation: orientation,
+            modelId: info.modelId,
+            modelName: info.modelName,
+            organization: organization,
+            organizationType: organizationType,
+            userId: userId
+          });
+
+          throw error;
         });
       }
 
@@ -593,6 +674,8 @@
           var user = getLoginUser(res);
 
           if (!token || !user) {
+            sendLog('AUTO_LOGIN_INVALID_AUTH', 'warn', 'saved login auth is invalid');
+
             clearStorage();
             setStatus('자동 로그인 실패');
             setError('저장된 로그인 정보가 유효하지 않습니다.');
@@ -605,7 +688,8 @@
           return registerAndRedirect(token, user).then(function () {
             return true;
           });
-        }).catch(function () {
+        }).catch(function (error) {
+          sendLog('AUTO_LOGIN_ERROR', 'warn', serializeError(error));
           setStatus('자동 로그인 실패');
           return false;
         });
@@ -626,6 +710,10 @@
               setTimeout(attempt, AUTO_LOGIN_RETRY_DELAY);
               return;
             }
+
+            sendLog('AUTO_LOGIN_MAX_RETRY_REACHED', 'warn', 'auto login max retry reached', {
+              retryCount: retryCount
+            });
 
             setStatus('로그인 정보를 입력해주세요');
             emailEl.focus();
@@ -665,6 +753,8 @@
           var user = getLoginUser(res);
 
           if (!token || !user) {
+            sendLog('MANUAL_LOGIN_INVALID_AUTH', 'warn', 'manual login invalid auth');
+
             setError('이메일 또는 비밀번호를 확인해주세요');
             resetLoginButton();
             return;
@@ -676,7 +766,9 @@
           return registerAndRedirect(token, user).then(function () {
             resetLoginButton();
           });
-        }).catch(function () {
+        }).catch(function (error) {
+          sendLog('MANUAL_LOGIN_ERROR', 'error', serializeError(error));
+
           setError('로그인 중 오류가 발생했습니다.');
           resetLoginButton();
         });
@@ -685,6 +777,8 @@
       loginBtnEl.addEventListener('click', handleLogin);
 
       clearBtnEl.addEventListener('click', function () {
+        sendLog('LOGIN_STORAGE_CLEARED', 'info', 'login storage cleared by user');
+
         clearStorage();
         setError('저장된 정보를 초기화했습니다.');
         setStatus('로그인 정보를 입력해주세요');
@@ -713,7 +807,23 @@
         applyOrientationClass();
       });
 
+      window.addEventListener('online', function () {
+        sendLog('LOGIN_NETWORK_ONLINE', 'info', 'browser online event');
+      });
+
+      window.addEventListener('offline', function () {
+        sendLog('LOGIN_NETWORK_OFFLINE', 'warn', 'browser offline event');
+      });
+
       applyOrientationClass();
+
+      sendLog('LOGIN_PAGE_LOADED', 'info', 'tv-login page loaded', {
+        userAgent: navigator.userAgent || '',
+        orientation: getOrientation(),
+        href: window.location.href,
+        nativeHeartbeat: getQueryParam('nativeHeartbeat') || ''
+      });
+
       startAutoLoginWithRetry();
     })();
   </script>
