@@ -1,11 +1,18 @@
 import { StatusBar } from "expo-status-bar";
-import { BackHandler, NativeModules, StyleSheet, View } from "react-native";
+import {
+  BackHandler,
+  NativeModules,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { WebView, WebViewMessageEvent } from "react-native-webview";
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as NavigationBar from "expo-navigation-bar";
 import * as ScreenOrientation from "expo-screen-orientation";
 import { Pusher, PusherEvent } from "@pusher/pusher-websocket-react-native";
 import * as Updates from "expo-updates";
+import NetInfo from "@react-native-community/netinfo";
 
 import { sendDeviceLog, updateDeviceStatus } from "../lib/firebaseLogger";
 
@@ -354,6 +361,7 @@ async function readQuberDeviceStatus() {
 export default function HomeScreen() {
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const [webViewKey, setWebViewKey] = useState(0);
+  const [isNetworkReady, setIsNetworkReady] = useState(false);
 
   const nativeChannelRef = useRef<string | null>(null);
   const webViewRef = useRef<WebView>(null);
@@ -365,12 +373,16 @@ export default function HomeScreen() {
   const isPlayerPageRef = useRef(false);
   const recoveryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastStatusSentAtRef = useRef(0);
+  const networkReadyRef = useRef(false);
 
   const updateCurrentDeviceStatus = useCallback(
     async (reason: string, force = false) => {
       const now = Date.now();
 
-      if (!force && now - lastStatusSentAtRef.current < DEVICE_STATUS_UPDATE_INTERVAL) {
+      if (
+        !force &&
+        now - lastStatusSentAtRef.current < DEVICE_STATUS_UPDATE_INTERVAL
+      ) {
         return;
       }
 
@@ -381,7 +393,7 @@ export default function HomeScreen() {
 
         await updateDeviceStatus({
           deviceId: deviceIdRef.current,
-          online: true,
+          online: networkReadyRef.current,
           currentUrl: currentUrlRef.current,
           lastHeartbeatAt: lastHeartbeatRef.current,
           reloadCount: reloadCountRef.current,
@@ -438,7 +450,7 @@ export default function HomeScreen() {
 
     updateDeviceStatus({
       deviceId: deviceIdRef.current,
-      online: true,
+      online: networkReadyRef.current,
       currentUrl: START_URL,
       lastHeartbeatAt: lastHeartbeatRef.current,
       reloadCount: 0,
@@ -453,6 +465,21 @@ export default function HomeScreen() {
 
   const reloadWebView = useCallback(
     (reason: string) => {
+      if (!networkReadyRef.current) {
+        console.log("[WEBVIEW RECOVERY] network not ready. skip reload:", reason);
+
+        sendDeviceLog({
+          deviceId: deviceIdRef.current,
+          eventType: "WEBVIEW_RELOAD_SKIPPED_NETWORK_NOT_READY",
+          level: "warn",
+          message: reason,
+          url: currentUrlRef.current,
+          reloadCount: reloadCountRef.current,
+        });
+
+        return;
+      }
+
       reloadCountRef.current += 1;
 
       console.log("[WEBVIEW RECOVERY] reload:", reason, reloadCountRef.current);
@@ -468,7 +495,7 @@ export default function HomeScreen() {
 
       updateDeviceStatus({
         deviceId: deviceIdRef.current,
-        online: true,
+        online: networkReadyRef.current,
         currentUrl: currentUrlRef.current,
         lastHeartbeatAt: lastHeartbeatRef.current,
         reloadCount: reloadCountRef.current,
@@ -628,6 +655,94 @@ export default function HomeScreen() {
   );
 
   useEffect(() => {
+    const unsubscribe = NetInfo.addEventListener((state) => {
+      const connected =
+        Boolean(state.isConnected) && state.isInternetReachable !== false;
+
+      const wasReady = networkReadyRef.current;
+
+      networkReadyRef.current = connected;
+      setIsNetworkReady(connected);
+
+      if (connected && !wasReady) {
+        console.log("[NETWORK] connected:", state.type);
+
+        lastHeartbeatRef.current = Date.now();
+
+        sendDeviceLog({
+          deviceId: deviceIdRef.current,
+          eventType: "NETWORK_CONNECTED",
+          level: "info",
+          message: "Network connected",
+          url: currentUrlRef.current,
+          payload: {
+            type: state.type,
+            isConnected: state.isConnected,
+            isInternetReachable: state.isInternetReachable,
+          },
+        });
+
+        updateDeviceStatus({
+          deviceId: deviceIdRef.current,
+          online: true,
+          currentUrl: currentUrlRef.current,
+          lastHeartbeatAt: lastHeartbeatRef.current,
+          reloadCount: reloadCountRef.current,
+          webview: {
+            isPlayerPage: isPlayerPageRef.current,
+            reason: "NETWORK_CONNECTED",
+          },
+          network: {
+            connectType: state.type,
+          },
+        });
+
+        if (webViewRef.current) {
+          setTimeout(() => {
+            webViewRef.current?.reload();
+          }, 1000);
+        }
+
+        return;
+      }
+
+      if (!connected && wasReady) {
+        console.log("[NETWORK] disconnected:", state.type);
+
+        sendDeviceLog({
+          deviceId: deviceIdRef.current,
+          eventType: "NETWORK_DISCONNECTED",
+          level: "warn",
+          message: "Network disconnected",
+          url: currentUrlRef.current,
+          payload: {
+            type: state.type,
+            isConnected: state.isConnected,
+            isInternetReachable: state.isInternetReachable,
+          },
+        });
+
+        updateDeviceStatus({
+          deviceId: deviceIdRef.current,
+          online: false,
+          currentUrl: currentUrlRef.current,
+          lastHeartbeatAt: lastHeartbeatRef.current,
+          reloadCount: reloadCountRef.current,
+          webview: {
+            isPlayerPage: isPlayerPageRef.current,
+            lastError: "NETWORK_DISCONNECTED",
+          },
+          network: {
+            connectType: state.type,
+          },
+        });
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
     if (!deviceId) return;
 
     deviceIdRef.current = deviceId;
@@ -719,6 +834,7 @@ export default function HomeScreen() {
 
   useEffect(() => {
     const interval = setInterval(() => {
+      if (!networkReadyRef.current) return;
       if (!isPlayerPageRef.current) return;
 
       const now = Date.now();
@@ -769,11 +885,15 @@ export default function HomeScreen() {
     }, 5000);
 
     const initialUpdateTimer = setTimeout(() => {
-      checkAndApplyUpdate(deviceIdRef.current);
+      if (networkReadyRef.current) {
+        checkAndApplyUpdate(deviceIdRef.current);
+      }
     }, 3000);
 
     const updateInterval = setInterval(
       () => {
+        if (!networkReadyRef.current) return;
+
         console.log("[EAS UPDATE] periodic check...");
         checkAndApplyUpdate(deviceIdRef.current);
       },
@@ -802,124 +922,133 @@ export default function HomeScreen() {
     <View style={styles.container}>
       <StatusBar hidden />
 
-      <WebView
-        key={webViewKey}
-        ref={webViewRef}
-        source={{ uri: START_URL }}
-        style={styles.webview}
-        javaScriptEnabled
-        domStorageEnabled
-        mediaPlaybackRequiresUserAction={false}
-        allowsFullscreenVideo
-        allowsInlineMediaPlayback
-        mixedContentMode="always"
-        androidLayerType="hardware"
-        setSupportMultipleWindows={false}
-        originWhitelist={["*"]}
-        onMessage={handleWebViewMessage}
-        onNavigationStateChange={(navState) => {
-          currentUrlRef.current = navState.url;
+      {isNetworkReady ? (
+        <WebView
+          key={webViewKey}
+          ref={webViewRef}
+          source={{ uri: START_URL }}
+          style={styles.webview}
+          javaScriptEnabled
+          domStorageEnabled
+          mediaPlaybackRequiresUserAction={false}
+          allowsFullscreenVideo
+          allowsInlineMediaPlayback
+          mixedContentMode="always"
+          androidLayerType="hardware"
+          setSupportMultipleWindows={false}
+          originWhitelist={["*"]}
+          onMessage={handleWebViewMessage}
+          onNavigationStateChange={(navState) => {
+            currentUrlRef.current = navState.url;
 
-          if (navState.url.includes("tv-play.html")) {
-            isPlayerPageRef.current = true;
-          }
+            if (navState.url.includes("tv-play.html")) {
+              isPlayerPageRef.current = true;
+            }
 
-          if (navState.url.includes("tv-login.html")) {
-            isPlayerPageRef.current = false;
-            reloadCountRef.current = 0;
-            lastHeartbeatRef.current = Date.now();
-          }
-        }}
-        onLoadEnd={() => {
-          console.log("[WEBVIEW] load end:", currentUrlRef.current);
+            if (navState.url.includes("tv-login.html")) {
+              isPlayerPageRef.current = false;
+              reloadCountRef.current = 0;
+              lastHeartbeatRef.current = Date.now();
+            }
+          }}
+          onLoadEnd={() => {
+            console.log("[WEBVIEW] load end:", currentUrlRef.current);
 
-          if (recoveryTimerRef.current) {
-            clearTimeout(recoveryTimerRef.current);
-            recoveryTimerRef.current = null;
-          }
-        }}
-        onError={(event) => {
-          console.log("[WEBVIEW] error:", event.nativeEvent);
+            if (recoveryTimerRef.current) {
+              clearTimeout(recoveryTimerRef.current);
+              recoveryTimerRef.current = null;
+            }
+          }}
+          onError={(event) => {
+            console.log("[WEBVIEW] error:", event.nativeEvent);
 
-          const message = String(
-            event.nativeEvent.description || "WEBVIEW_ERROR",
-          );
+            const message = String(
+              event.nativeEvent.description || "WEBVIEW_ERROR",
+            );
 
-          sendDeviceLog({
-            deviceId: deviceIdRef.current,
-            eventType: "WEBVIEW_ERROR",
-            level: "error",
-            message,
-            url: currentUrlRef.current,
-            payload: event.nativeEvent,
-          });
+            sendDeviceLog({
+              deviceId: deviceIdRef.current,
+              eventType: "WEBVIEW_ERROR",
+              level: "error",
+              message,
+              url: currentUrlRef.current,
+              payload: event.nativeEvent,
+            });
 
-          updateDeviceStatus({
-            deviceId: deviceIdRef.current,
-            online: true,
-            currentUrl: currentUrlRef.current,
-            reloadCount: reloadCountRef.current,
-            webview: {
-              isPlayerPage: isPlayerPageRef.current,
-              lastError: message,
-            },
-          });
+            updateDeviceStatus({
+              deviceId: deviceIdRef.current,
+              online: networkReadyRef.current,
+              currentUrl: currentUrlRef.current,
+              reloadCount: reloadCountRef.current,
+              webview: {
+                isPlayerPage: isPlayerPageRef.current,
+                lastError: message,
+              },
+            });
 
-          scheduleRecovery("WEBVIEW_ERROR");
-        }}
-        onHttpError={(event) => {
-          console.log("[WEBVIEW] http error:", event.nativeEvent);
+            scheduleRecovery("WEBVIEW_ERROR");
+          }}
+          onHttpError={(event) => {
+            console.log("[WEBVIEW] http error:", event.nativeEvent);
 
-          const message = `HTTP_${event.nativeEvent.statusCode}`;
+            const message = `HTTP_${event.nativeEvent.statusCode}`;
 
-          sendDeviceLog({
-            deviceId: deviceIdRef.current,
-            eventType: "WEBVIEW_HTTP_ERROR",
-            level: "error",
-            message,
-            url: event.nativeEvent.url || currentUrlRef.current,
-            payload: event.nativeEvent,
-          });
+            sendDeviceLog({
+              deviceId: deviceIdRef.current,
+              eventType: "WEBVIEW_HTTP_ERROR",
+              level: "error",
+              message,
+              url: event.nativeEvent.url || currentUrlRef.current,
+              payload: event.nativeEvent,
+            });
 
-          updateDeviceStatus({
-            deviceId: deviceIdRef.current,
-            online: true,
-            currentUrl: currentUrlRef.current,
-            reloadCount: reloadCountRef.current,
-            webview: {
-              isPlayerPage: isPlayerPageRef.current,
-              lastError: message,
-            },
-          });
+            updateDeviceStatus({
+              deviceId: deviceIdRef.current,
+              online: networkReadyRef.current,
+              currentUrl: currentUrlRef.current,
+              reloadCount: reloadCountRef.current,
+              webview: {
+                isPlayerPage: isPlayerPageRef.current,
+                lastError: message,
+              },
+            });
 
-          scheduleRecovery("WEBVIEW_HTTP_ERROR");
-        }}
-        onRenderProcessGone={(event) => {
-          console.log("[WEBVIEW] render process gone:", event.nativeEvent);
+            scheduleRecovery("WEBVIEW_HTTP_ERROR");
+          }}
+          onRenderProcessGone={(event) => {
+            console.log("[WEBVIEW] render process gone:", event.nativeEvent);
 
-          sendDeviceLog({
-            deviceId: deviceIdRef.current,
-            eventType: "WEBVIEW_RENDER_PROCESS_GONE",
-            level: "error",
-            message: "Android WebView render process gone",
-            url: currentUrlRef.current,
-            payload: event.nativeEvent,
-          });
+            sendDeviceLog({
+              deviceId: deviceIdRef.current,
+              eventType: "WEBVIEW_RENDER_PROCESS_GONE",
+              level: "error",
+              message: "Android WebView render process gone",
+              url: currentUrlRef.current,
+              payload: event.nativeEvent,
+            });
 
-          updateDeviceStatus({
-            deviceId: deviceIdRef.current,
-            online: true,
-            currentUrl: currentUrlRef.current,
-            reloadCount: reloadCountRef.current,
-            webview: {
-              isPlayerPage: isPlayerPageRef.current,
-              lastError: "WEBVIEW_RENDER_PROCESS_GONE",
-            },
-          });
+            updateDeviceStatus({
+              deviceId: deviceIdRef.current,
+              online: networkReadyRef.current,
+              currentUrl: currentUrlRef.current,
+              reloadCount: reloadCountRef.current,
+              webview: {
+                isPlayerPage: isPlayerPageRef.current,
+                lastError: "WEBVIEW_RENDER_PROCESS_GONE",
+              },
+            });
 
-          resetToStartUrl("WEBVIEW_RENDER_PROCESS_GONE");
-        }}
-      />
+            resetToStartUrl("WEBVIEW_RENDER_PROCESS_GONE");
+          }}
+        />
+      ) : (
+        <View style={styles.networkWaiting}>
+          <Text style={styles.networkTitle}>네트워크 연결 대기 중</Text>
+          <Text style={styles.networkDescription}>
+            Wi-Fi 또는 유선 네트워크가 연결되면 자동으로 재생을 시작합니다.
+          </Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -933,5 +1062,28 @@ const styles = StyleSheet.create({
   webview: {
     flex: 1,
     backgroundColor: "#000",
+  },
+
+  networkWaiting: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 40,
+    backgroundColor: "#000",
+  },
+
+  networkTitle: {
+    color: "#fff",
+    fontSize: 34,
+    fontWeight: "700",
+    marginBottom: 16,
+    textAlign: "center",
+  },
+
+  networkDescription: {
+    color: "#aaa",
+    fontSize: 20,
+    lineHeight: 30,
+    textAlign: "center",
   },
 });

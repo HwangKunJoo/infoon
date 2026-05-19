@@ -1,8 +1,6 @@
 import { initializeApp, getApps } from "firebase/app";
 import {
   getFirestore,
-  collection,
-  addDoc,
   serverTimestamp,
   doc,
   setDoc,
@@ -25,6 +23,14 @@ const lastSentMap: Record<string, number> = {};
 
 type LogLevel = "info" | "warn" | "error";
 
+function sanitizeDocIdPart(value: string) {
+  return value
+    .replace(/\//g, "_")
+    .replace(/\s+/g, "_")
+    .replace(/[^\w.-]/g, "_")
+    .slice(0, 80);
+}
+
 export async function sendDeviceLog(params: {
   deviceId?: string | null;
   eventType: string;
@@ -37,16 +43,22 @@ export async function sendDeviceLog(params: {
   try {
     const now = Date.now();
     const deviceId = params.deviceId || "unknown";
-    const throttleKey = `${deviceId}:${params.eventType}`;
+    const eventType = params.eventType || "UNKNOWN_EVENT";
+
+    const throttleKey = `${deviceId}:${eventType}`;
     const lastSentAt = lastSentMap[throttleKey] || 0;
 
     if (now - lastSentAt < 60_000) return;
 
     lastSentMap[throttleKey] = now;
 
-    await addDoc(collection(db, "device_logs"), {
+    const safeDeviceId = sanitizeDocIdPart(String(deviceId));
+    const safeEventType = sanitizeDocIdPart(String(eventType));
+    const docId = `${safeDeviceId}_${now}_${safeEventType}`;
+
+    await setDoc(doc(db, "device_logs", docId), {
       deviceId,
-      eventType: params.eventType,
+      eventType,
       level: params.level || "info",
       message: params.message || "",
       url: params.url || "",
@@ -96,7 +108,7 @@ export async function updateDeviceStatus(params: {
     const deviceId = params.deviceId || "unknown";
 
     await setDoc(
-      doc(db, "device_status", deviceId),
+      doc(db, "device_status", String(deviceId)),
       {
         deviceId,
         online: params.online ?? true,
