@@ -1,5 +1,5 @@
 (function () {
-    var firebaseConfig = {
+  var firebaseConfig = {
     apiKey: "AIzaSyDoKXJokKhiY5x-3zFoHFo8c4ISadFPQCE",
     authDomain: "infoon-tv-monitoring.firebaseapp.com",
     projectId: "infoon-tv-monitoring",
@@ -9,52 +9,51 @@
     measurementId: "G-4VMTX8G10Z"
   };
 
-
-  var db = null;
-  var lastSentMap = {};
-
-  try {
-    if (!window.firebase) {
-      console.log('[FIREBASE] firebase sdk not loaded');
-      return;
-    }
-
-    if (!window.firebase.apps.length) {
-      window.firebase.initializeApp(firebaseConfig);
-    }
-
-    db = window.firebase.firestore();
-    console.log('[FIREBASE] logger ready');
-  } catch (error) {
-    console.log('[FIREBASE_INIT_FAILED]', error);
+  if (!firebase.apps.length) {
+    firebase.initializeApp(firebaseConfig);
   }
 
-  window.sendPlayerLog = async function (params) {
-    try {
-      if (!db || !params || !params.eventType) return;
+  var db = firebase.firestore();
+  var lastSentMap = {};
 
+  function sanitizeDocIdPart(value) {
+    return String(value || "unknown")
+      .replace(/\//g, "_")
+      .replace(/\s+/g, "_")
+      .replace(/[^\w.-]/g, "_")
+      .slice(0, 80);
+  }
+
+  window.sendPlayerLog = function (params) {
+    try {
       var now = Date.now();
-      var deviceId = params.deviceId || 'unknown';
-      var throttleKey = deviceId + ':' + params.eventType;
+      var deviceId = params.deviceId || "unknown";
+      var eventType = params.eventType || "UNKNOWN_EVENT";
+      var throttleKey = deviceId + ":" + eventType;
       var lastSentAt = lastSentMap[throttleKey] || 0;
 
       if (now - lastSentAt < 60000) return;
 
       lastSentMap[throttleKey] = now;
 
-      await db.collection('device_logs').add({
+      var safeDeviceId = sanitizeDocIdPart(deviceId);
+      var safeEventType = sanitizeDocIdPart(eventType);
+      var docId = safeDeviceId + "_" + now + "_" + safeEventType;
+
+      db.collection("device_logs").doc(docId).set({
         deviceId: deviceId,
-        eventType: params.eventType,
-        level: params.level || 'info',
-        message: params.message || '',
+        eventType: eventType,
+        level: params.level || "info",
+        message: params.message || "",
         url: params.url || window.location.href,
+        reloadCount: params.reloadCount == null ? null : params.reloadCount,
         payload: params.payload || {},
-        source: params.source || 'tv-login-html',
-        createdAt: window.firebase.firestore.FieldValue.serverTimestamp(),
-        clientCreatedAt: now,
+        source: params.source || "player-html",
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        clientCreatedAt: now
       });
     } catch (error) {
-      console.log('[PLAYER_FIREBASE_LOG_FAILED]', error);
+      console.log("[PLAYER_FIREBASE_LOG_FAILED]", error);
     }
   };
 })();
