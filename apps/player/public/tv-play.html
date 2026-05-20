@@ -263,13 +263,9 @@
       }
 
       function getOrientation() {
-        var queryOrientation = getQueryParam('orientation');
-
-        if (queryOrientation === 'landscape' || queryOrientation === 'portrait') {
-          return queryOrientation;
-        }
-
-        return window.innerWidth >= window.innerHeight ? 'landscape' : 'portrait';
+        return window.innerWidth >= window.innerHeight
+          ? 'landscape'
+          : 'portrait';
       }
 
       function applyOrientationClass() {

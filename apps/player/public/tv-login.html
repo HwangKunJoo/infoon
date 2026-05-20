@@ -237,7 +237,7 @@
         </div>
 
         <button id="loginBtn" class="btn btn-primary">로그인</button>
-        <button id="clearBtn" class="btn btn-secondary">저장 정보 초기화</button>
+        
         <p id="error" class="error"></p>
       </div>
     </div>
@@ -270,7 +270,6 @@
       var emailEl = document.getElementById('email');
       var passwordEl = document.getElementById('password');
       var loginBtnEl = document.getElementById('loginBtn');
-      var clearBtnEl = document.getElementById('clearBtn');
 
       function safeGet(key) {
         try { return localStorage.getItem(key); } catch (e) { return null; }
@@ -335,15 +334,6 @@
         }
       }
 
-      function clearStorage() {
-        safeRemove(KEYS.TOKEN);
-        safeRemove(KEYS.DEVICE_ID);
-        safeRemove(KEYS.EMAIL);
-        safeRemove(KEYS.PASSWORD);
-        safeRemove(KEYS.USER);
-        safeRemove(KEYS.ORIENTATION);
-      }
-
       function setStatus(text) {
         statusEl.textContent = text;
       }
@@ -367,14 +357,8 @@
       }
 
       function getOrientation() {
-        var queryOrientation = getQueryParam('orientation');
-
-        if (queryOrientation === 'landscape' || queryOrientation === 'portrait') {
-          return queryOrientation;
-        }
-
         return window.innerWidth >= window.innerHeight ? 'landscape' : 'portrait';
-      }
+      } 
 
       function applyOrientationClass() {
         var orientation = getOrientation();
@@ -541,38 +525,36 @@
       }
 
       function redirectToPlay(deviceId) {
-        var orientation = getOrientation();
-        var webVersion = getQueryParam('v') || '';
-        var nativeHeartbeat = getQueryParam('nativeHeartbeat') || '';
+  var orientation = getOrientation();
+  var webVersion = getQueryParam('v') || '';
+  var nativeHeartbeat = getQueryParam('nativeHeartbeat') || '';
 
-        setStatus('재생 화면으로 이동 중...');
+  setStatus('재생 화면으로 이동 중...');
 
-        sendLog('LOGIN_REDIRECT_TO_PLAY', 'info', 'redirect to tv-play', {
-          deviceId: String(deviceId),
-          orientation: orientation,
-          webVersion: webVersion,
-          nativeHeartbeat: nativeHeartbeat
-        });
+  sendLog('LOGIN_REDIRECT_TO_PLAY', 'info', 'redirect to tv-play', {
+    deviceId: String(deviceId),
+    orientation: orientation,
+    webVersion: webVersion,
+    nativeHeartbeat: nativeHeartbeat
+  });
 
-        setTimeout(function () {
-          var nextUrl =
-            WEB_BASE_URL +
-            '/tv-play.html?deviceId=' +
-            encodeURIComponent(deviceId) +
-            '&orientation=' +
-            encodeURIComponent(orientation);
+  setTimeout(function () {
+        var nextUrl =
+          WEB_BASE_URL +
+          '/tv-play.html?deviceId=' +
+          encodeURIComponent(deviceId);
 
-          if (webVersion) {
-            nextUrl += '&v=' + encodeURIComponent(webVersion);
-          }
+        if (webVersion) {
+          nextUrl += '&v=' + encodeURIComponent(webVersion);
+        }
 
-          if (nativeHeartbeat) {
-            nextUrl += '&nativeHeartbeat=' + encodeURIComponent(nativeHeartbeat);
-          }
+        if (nativeHeartbeat) {
+          nextUrl += '&nativeHeartbeat=' + encodeURIComponent(nativeHeartbeat);
+        }
 
-          window.location.href = nextUrl;
-        }, 300);
-      }
+        window.location.href = nextUrl;
+      }, 300);
+    }
 
       function registerAndRedirect(token, user) {
         var savedDeviceId = safeGet(KEYS.DEVICE_ID);
@@ -674,11 +656,14 @@
           var user = getLoginUser(res);
 
           if (!token || !user) {
-            sendLog('AUTO_LOGIN_INVALID_AUTH', 'warn', 'saved login auth is invalid');
+            sendLog('AUTO_LOGIN_INVALID_AUTH', 'warn', 'saved login auth is invalid', {
+            hasToken: !!token,
+            hasUser: !!user,
+            response: res
+            });
 
-            clearStorage();
             setStatus('자동 로그인 실패');
-            setError('저장된 로그인 정보가 유효하지 않습니다.');
+            setError('저장된 로그인 정보를 다시 확인 중입니다.');
             return false;
           }
 
@@ -775,14 +760,6 @@
       }
 
       loginBtnEl.addEventListener('click', handleLogin);
-
-      clearBtnEl.addEventListener('click', function () {
-        sendLog('LOGIN_STORAGE_CLEARED', 'info', 'login storage cleared by user');
-
-        clearStorage();
-        setError('저장된 정보를 초기화했습니다.');
-        setStatus('로그인 정보를 입력해주세요');
-      });
 
       emailEl.addEventListener('keydown', function (e) {
         if (e.key === 'Enter' || e.keyCode === 13) {
