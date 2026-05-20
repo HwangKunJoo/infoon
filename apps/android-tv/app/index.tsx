@@ -16,7 +16,7 @@ import NetInfo from "@react-native-community/netinfo";
 
 import { sendDeviceLog, updateDeviceStatus } from "../lib/firebaseLogger";
 
-const WEB_VERSION = "20260514-1";
+const WEB_VERSION = "20260520-1";
 const START_URL = `https://info-on.cloud/tv-login.html?v=${WEB_VERSION}&nativeHeartbeat=1`;
 const PACKAGE_NAME = "com.infoon.tv";
 
@@ -120,6 +120,25 @@ function logUpdateInfo(prefix = "[EAS UPDATE]") {
   console.log(`${prefix} isEmbeddedLaunch:`, Updates.isEmbeddedLaunch);
 }
 
+function getUpdatePayload(extra?: Record<string, unknown>) {
+  return {
+    channel: Updates.channel,
+    runtimeVersion: Updates.runtimeVersion,
+    updateId: Updates.updateId,
+    createdAt: Updates.createdAt ? Updates.createdAt.toISOString() : null,
+    isEmbeddedLaunch: Updates.isEmbeddedLaunch,
+    isEnabled: Updates.isEnabled,
+    ...extra,
+  };
+}
+
+function shouldIgnoreUpdateError(errorMessage: string) {
+  return (
+    errorMessage.includes("ExpoUpdates.checkForUpdateAsync") &&
+    errorMessage.includes("Failed to check for update")
+  );
+}
+
 async function checkAndApplyUpdate(deviceId?: string | null) {
   if (isCheckingUpdate) {
     console.log("[EAS UPDATE] already checking. skip.");
@@ -157,11 +176,9 @@ async function checkAndApplyUpdate(deviceId?: string | null) {
       eventType: "APP_UPDATE_AVAILABLE",
       level: "info",
       message: "EAS update available",
-      payload: {
-        channel: Updates.channel,
-        runtimeVersion: Updates.runtimeVersion,
+      payload: getUpdatePayload({
         currentUpdateId: Updates.updateId,
-      },
+      }),
     });
 
     console.log("[EAS UPDATE] update available. fetching...");
@@ -176,27 +193,31 @@ async function checkAndApplyUpdate(deviceId?: string | null) {
       eventType: "APP_UPDATE_FETCHED",
       level: "info",
       message: "EAS update fetched. reload app",
-      payload: {
-        channel: Updates.channel,
-        runtimeVersion: Updates.runtimeVersion,
+      payload: getUpdatePayload({
         currentUpdateId: Updates.updateId,
-      },
+        fetchResult,
+      }),
     });
 
     await Updates.reloadAsync();
   } catch (error) {
     console.log("[EAS UPDATE] failed:", error);
 
+    const errorMessage = serializeError(error);
+
+    if (shouldIgnoreUpdateError(errorMessage)) {
+      console.warn("[APP_UPDATE_ERROR_IGNORED]", errorMessage);
+      return;
+    }
+
     await sendDeviceLog({
       deviceId,
       eventType: "APP_UPDATE_ERROR",
       level: "error",
-      message: serializeError(error),
-      payload: {
-        channel: Updates.channel,
-        runtimeVersion: Updates.runtimeVersion,
-        updateId: Updates.updateId,
-      },
+      message: errorMessage,
+      payload: getUpdatePayload({
+        phase: "check_or_fetch",
+      }),
     });
   } finally {
     isCheckingUpdate = false;
@@ -622,9 +643,7 @@ export default function HomeScreen() {
 
           currentContentRef.current = {
             currentIndex:
-              typeof data.currentIndex === "number"
-                ? data.currentIndex
-                : null,
+              typeof data.currentIndex === "number" ? data.currentIndex : null,
             contentsLength:
               typeof data.contentsLength === "number"
                 ? data.contentsLength

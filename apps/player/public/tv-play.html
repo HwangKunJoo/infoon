@@ -802,35 +802,17 @@
         };
 
         videoEl.onwaiting = function () {
-          sendLog('VIDEO_WAITING', 'warn', 'video waiting', {
-            url: url,
-            currentIndex: currentIndex,
-            currentTime: videoEl.currentTime || 0
-          });
           resetStallTimer('waiting');
         };
 
         videoEl.onstalled = function () {
-          sendLog('VIDEO_STALLED', 'warn', 'video stalled', {
-            url: url,
-            currentIndex: currentIndex,
-            currentTime: videoEl.currentTime || 0
-          });
           resetStallTimer('stalled');
         };
 
         videoEl.onabort = function () {
-          sendLog('VIDEO_ABORTED', 'warn', 'video aborted', {
-            url: url,
-            currentIndex: currentIndex
-          });
         };
 
         videoEl.onsuspend = function () {
-          sendLog('VIDEO_SUSPENDED', 'info', 'video suspended', {
-            url: url,
-            currentIndex: currentIndex
-          });
         };
 
         videoEl.onended = function () {
