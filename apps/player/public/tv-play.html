@@ -709,24 +709,49 @@
         videoEl.src = url;
 
         var hasStartedPlay = false;
+        var isPlayPending = false;
+        var hasMovedNext = false;
         var lastCurrentTime = 0;
+
+        function moveNextOnce(eventType, level, message, payload) {
+          if (hasMovedNext) return;
+
+          hasMovedNext = true;
+          sendLog(eventType, level, message, payload);
+          playNext();
+        }
 
         videoLoadTimer = setTimeout(function () {
           videoLoadTimer = null;
 
           if (!hasStartedPlay) {
-            moveNextWithLog('VIDEO_LOAD_TIMEOUT', 'warn', 'video load timeout', {
+            moveNextOnce('VIDEO_LOAD_TIMEOUT', 'warn', 'video load timeout', {
               url: url,
               currentIndex: currentIndex
             });
           }
         }, VIDEO_LOAD_TIMEOUT);
 
+        function markPlaying(reason) {
+          if (hasMovedNext) return;
+
+          hasStartedPlay = true;
+          isPlayPending = false;
+
+          clearTimer('videoLoad');
+          showElement(videoEl);
+          resetStallTimer(reason || 'playing');
+        }
+
         function resetStallTimer(reason) {
+          if (!hasStartedPlay || hasMovedNext) return;
+
           clearTimer('videoStall');
 
           videoStallTimer = setTimeout(function () {
             videoStallTimer = null;
+
+            if (!hasStartedPlay || hasMovedNext) return;
 
             var currentTime = 0;
 
@@ -734,8 +759,8 @@
               currentTime = Number(videoEl.currentTime || 0);
             } catch (e) {}
 
-            if (hasStartedPlay && currentTime <= lastCurrentTime + 0.1) {
-              moveNextWithLog('VIDEO_STALL_TIMEOUT', 'warn', 'video stalled too long', {
+            if (currentTime <= lastCurrentTime + 0.1) {
+              moveNextOnce('VIDEO_STALL_TIMEOUT', 'warn', 'video stalled too long', {
                 url: url,
                 reason: reason || '',
                 currentTime: currentTime,
@@ -750,11 +775,11 @@
         }
 
         function startPlay() {
-          if (hasStartedPlay) {
+          if (hasStartedPlay || isPlayPending || hasMovedNext) {
             return;
           }
 
-          hasStartedPlay = true;
+          isPlayPending = true;
           clearTimer('videoLoad');
 
           showElement(videoEl);
@@ -765,18 +790,34 @@
             if (playPromise && typeof playPromise.then === 'function') {
               playPromise
                 .then(function () {
-                  showElement(videoEl);
-                  resetStallTimer('play_resolved');
+                  markPlaying('play_resolved');
                 })
                 .catch(function (error) {
-                  moveNextWithLog('VIDEO_PLAY_PROMISE_ERROR', 'warn', serializeError(error), {
+                  isPlayPending = false;
+
+                  if (hasMovedNext) return;
+
+                  var errorMessage = serializeError(error);
+
+                  if (
+                    errorMessage.indexOf('interrupted by a call to pause') >= 0 ||
+                    errorMessage.indexOf('interrupted by a new load request') >= 0
+                  ) {
+                    return;
+                  }
+
+                  moveNextOnce('VIDEO_PLAY_PROMISE_ERROR', 'warn', errorMessage, {
                     url: url,
                     currentIndex: currentIndex
                   });
                 });
+            } else {
+              markPlaying('play_no_promise');
             }
           } catch (e) {
-            moveNextWithLog('VIDEO_PLAY_THROW_ERROR', 'warn', serializeError(e), {
+            isPlayPending = false;
+
+            moveNextOnce('VIDEO_PLAY_THROW_ERROR', 'warn', serializeError(e), {
               url: url,
               currentIndex: currentIndex
             });
@@ -788,6 +829,7 @@
         };
 
         videoEl.onloadeddata = function () {
+          if (hasMovedNext) return;
           showElement(videoEl);
         };
 
@@ -796,9 +838,7 @@
         };
 
         videoEl.onplaying = function () {
-          clearTimer('videoLoad');
-          showElement(videoEl);
-          resetStallTimer('playing');
+          markPlaying('playing');
         };
 
         videoEl.onwaiting = function () {
@@ -816,6 +856,8 @@
         };
 
         videoEl.onended = function () {
+          if (hasMovedNext) return;
+
           clearTimer('videoLoad');
           clearTimer('videoStall');
 
@@ -832,8 +874,10 @@
 
               if (replayPromise && typeof replayPromise.then === 'function') {
                 replayPromise.catch(function (error) {
+                  if (hasMovedNext) return;
+
                   singleVideoReplayCount = 0;
-                  moveNextWithLog('VIDEO_REPLAY_ERROR', 'warn', serializeError(error), {
+                  moveNextOnce('VIDEO_REPLAY_ERROR', 'warn', serializeError(error), {
                     url: url,
                     currentIndex: currentIndex
                   });
@@ -841,7 +885,7 @@
               }
             } catch (e) {
               singleVideoReplayCount = 0;
-              moveNextWithLog('VIDEO_REPLAY_THROW_ERROR', 'warn', serializeError(e), {
+              moveNextOnce('VIDEO_REPLAY_THROW_ERROR', 'warn', serializeError(e), {
                 url: url,
                 currentIndex: currentIndex
               });
@@ -851,10 +895,13 @@
           }
 
           singleVideoReplayCount = 0;
+          hasMovedNext = true;
           playNext();
         };
 
         videoEl.onerror = function () {
+          if (hasMovedNext) return;
+
           clearTimer('videoLoad');
           clearTimer('videoStall');
           singleVideoReplayCount = 0;
@@ -865,7 +912,7 @@
             errorCode = videoEl.error ? videoEl.error.code : null;
           } catch (e) {}
 
-          moveNextWithLog('VIDEO_ERROR', 'error', 'video element error', {
+          moveNextOnce('VIDEO_ERROR', 'error', 'video element error', {
             url: url,
             errorCode: errorCode,
             currentIndex: currentIndex
@@ -878,16 +925,18 @@
           clearTimer('videoLoad');
           singleVideoReplayCount = 0;
 
-          moveNextWithLog('VIDEO_LOAD_THROW_ERROR', 'error', serializeError(e), {
+          moveNextOnce('VIDEO_LOAD_THROW_ERROR', 'error', serializeError(e), {
             url: url,
             currentIndex: currentIndex
           });
         }
 
         setTimeout(function () {
-          if (videoEl.paused) {
+          if (hasMovedNext) return;
+
+          if (!hasStartedPlay && !isPlayPending) {
             startPlay();
-          } else {
+          } else if (hasStartedPlay) {
             clearTimer('videoLoad');
             showElement(videoEl);
             resetStallTimer('delayed_check');
