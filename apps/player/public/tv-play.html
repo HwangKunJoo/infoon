@@ -127,8 +127,8 @@
       var SINGLE_VIDEO_REPLAY_LIMIT = 20;
 
       var HEARTBEAT_INTERVAL = 15000;
-      var VIDEO_LOAD_TIMEOUT = 10000;
-      var VIDEO_STALL_TIMEOUT = 10000;
+      var VIDEO_LOAD_TIMEOUT = 3000;
+      var VIDEO_STALL_TIMEOUT = 3000;
       var IMAGE_LOAD_TIMEOUT = 3000;
       var REQUEST_TIMEOUT = 20000;
 
@@ -695,8 +695,10 @@
         videoEl.onabort = null;
         videoEl.onsuspend = null;
 
-        videoEl.className = videoEl.className.replace('show', '');
-        videoEl.style.display = 'none';
+        videoEl.className = videoEl.className
+          .replace(/\bshow\b/g, '')
+          .replace(/\s+/g, ' ');
+        videoEl.style.display = 'block';
 
         videoEl.muted = true;
         videoEl.autoplay = true;
@@ -709,13 +711,25 @@
         videoEl.src = url;
 
         var hasStartedPlay = false;
+        var hasMovedNext = false;
         var lastCurrentTime = 0;
+
+        function moveNextOnceWithLog(eventType, level, message, payload) {
+          if (hasMovedNext) return;
+          hasMovedNext = true;
+
+          clearTimer('videoLoad');
+          clearTimer('videoStall');
+
+          sendLog(eventType, level, message, payload);
+          playNext();
+        }
 
         videoLoadTimer = setTimeout(function () {
           videoLoadTimer = null;
 
           if (!hasStartedPlay) {
-            moveNextWithLog('VIDEO_LOAD_TIMEOUT', 'warn', 'video load timeout', {
+            moveNextOnceWithLog('VIDEO_LOAD_TIMEOUT', 'warn', 'video load timeout', {
               url: url,
               currentIndex: currentIndex
             });
@@ -723,10 +737,14 @@
         }, VIDEO_LOAD_TIMEOUT);
 
         function resetStallTimer(reason) {
+          if (hasMovedNext) return;
+
           clearTimer('videoStall');
 
           videoStallTimer = setTimeout(function () {
             videoStallTimer = null;
+
+            if (hasMovedNext) return;
 
             var currentTime = 0;
 
@@ -735,7 +753,7 @@
             } catch (e) {}
 
             if (hasStartedPlay && currentTime <= lastCurrentTime + 0.1) {
-              moveNextWithLog('VIDEO_STALL_TIMEOUT', 'warn', 'video stalled too long', {
+              moveNextOnceWithLog('VIDEO_STALL_TIMEOUT', 'warn', 'video stalled too long', {
                 url: url,
                 reason: reason || '',
                 currentTime: currentTime,
@@ -750,13 +768,12 @@
         }
 
         function startPlay() {
-          if (hasStartedPlay) {
+          if (hasStartedPlay || hasMovedNext) {
             return;
           }
 
           hasStartedPlay = true;
           clearTimer('videoLoad');
-
           showElement(videoEl);
 
           try {
@@ -765,18 +782,21 @@
             if (playPromise && typeof playPromise.then === 'function') {
               playPromise
                 .then(function () {
+                  if (hasMovedNext) return;
                   showElement(videoEl);
                   resetStallTimer('play_resolved');
                 })
                 .catch(function (error) {
-                  moveNextWithLog('VIDEO_PLAY_PROMISE_ERROR', 'warn', serializeError(error), {
+                  if (hasMovedNext) return;
+
+                  moveNextOnceWithLog('VIDEO_PLAY_PROMISE_ERROR', 'warn', serializeError(error), {
                     url: url,
                     currentIndex: currentIndex
                   });
                 });
             }
           } catch (e) {
-            moveNextWithLog('VIDEO_PLAY_THROW_ERROR', 'warn', serializeError(e), {
+            moveNextOnceWithLog('VIDEO_PLAY_THROW_ERROR', 'warn', serializeError(e), {
               url: url,
               currentIndex: currentIndex
             });
@@ -788,6 +808,7 @@
         };
 
         videoEl.onloadeddata = function () {
+          if (hasMovedNext) return;
           showElement(videoEl);
         };
 
@@ -796,6 +817,7 @@
         };
 
         videoEl.onplaying = function () {
+          if (hasMovedNext) return;
           clearTimer('videoLoad');
           showElement(videoEl);
           resetStallTimer('playing');
@@ -816,6 +838,8 @@
         };
 
         videoEl.onended = function () {
+          if (hasMovedNext) return;
+
           clearTimer('videoLoad');
           clearTimer('videoStall');
 
@@ -833,7 +857,7 @@
               if (replayPromise && typeof replayPromise.then === 'function') {
                 replayPromise.catch(function (error) {
                   singleVideoReplayCount = 0;
-                  moveNextWithLog('VIDEO_REPLAY_ERROR', 'warn', serializeError(error), {
+                  moveNextOnceWithLog('VIDEO_REPLAY_ERROR', 'warn', serializeError(error), {
                     url: url,
                     currentIndex: currentIndex
                   });
@@ -841,7 +865,7 @@
               }
             } catch (e) {
               singleVideoReplayCount = 0;
-              moveNextWithLog('VIDEO_REPLAY_THROW_ERROR', 'warn', serializeError(e), {
+              moveNextOnceWithLog('VIDEO_REPLAY_THROW_ERROR', 'warn', serializeError(e), {
                 url: url,
                 currentIndex: currentIndex
               });
@@ -851,6 +875,7 @@
           }
 
           singleVideoReplayCount = 0;
+          hasMovedNext = true;
           playNext();
         };
 
@@ -865,7 +890,7 @@
             errorCode = videoEl.error ? videoEl.error.code : null;
           } catch (e) {}
 
-          moveNextWithLog('VIDEO_ERROR', 'error', 'video element error', {
+          moveNextOnceWithLog('VIDEO_ERROR', 'error', 'video element error', {
             url: url,
             errorCode: errorCode,
             currentIndex: currentIndex
@@ -878,13 +903,15 @@
           clearTimer('videoLoad');
           singleVideoReplayCount = 0;
 
-          moveNextWithLog('VIDEO_LOAD_THROW_ERROR', 'error', serializeError(e), {
+          moveNextOnceWithLog('VIDEO_LOAD_THROW_ERROR', 'error', serializeError(e), {
             url: url,
             currentIndex: currentIndex
           });
         }
 
         setTimeout(function () {
+          if (hasMovedNext) return;
+
           if (videoEl.paused) {
             startPlay();
           } else {
