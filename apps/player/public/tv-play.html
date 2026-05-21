@@ -123,7 +123,7 @@
       var PUSHER_CLUSTER = 'ap3';
       var PUSHER_EVENT = 'refresh';
 
-      var PLAYER_VERSION = '20260521-video-reset-1';
+      var PLAYER_VERSION = '20260521-player-stable-1';
 
       var IMAGE_DURATION_SECONDS = 15;
       var SINGLE_VIDEO_REPLAY_LIMIT = 20;
@@ -737,14 +737,7 @@
         var hasMovedNext = false;
         var lastCurrentTime = 0;
         var sameTimeCount = 0;
-
-        sendLog('VIDEO_LOAD_START', 'info', 'video load start', {
-          url: url,
-          currentIndex: currentIndex,
-          playerVersion: PLAYER_VERSION
-        });
-
-        function moveNextOnce(eventType, level, message, payload) {
+function moveNextOnce(eventType, level, message, payload) {
           if (hasMovedNext) return;
 
           hasMovedNext = true;
@@ -768,16 +761,7 @@
 
           clearTimer('videoLoad');
           showElement(videoEl);
-
-          sendLog('VIDEO_PLAYING', 'info', reason || 'video playing', {
-            url: url,
-            currentIndex: currentIndex,
-            currentTime: videoEl.currentTime || 0,
-            readyState: videoEl.readyState,
-            networkState: videoEl.networkState
-          });
-
-          resetStallTimer(reason || 'playing');
+resetStallTimer(reason || 'playing');
         }
 
         function resetStallTimer(reason) {
@@ -827,15 +811,7 @@
 
           isPlayPending = true;
           showElement(videoEl);
-
-          sendLog('VIDEO_PLAY_ATTEMPT', 'info', reason || 'play attempt', {
-            url: url,
-            currentIndex: currentIndex,
-            readyState: videoEl.readyState,
-            networkState: videoEl.networkState
-          });
-
-          try {
+try {
             var playPromise = videoEl.play();
 
             if (playPromise && typeof playPromise.then === 'function') {
