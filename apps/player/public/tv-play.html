@@ -103,7 +103,7 @@
 
 <body>
   <div id="stage">
-    <video id="video" autoplay muted playsinline webkit-playsinline preload="auto"></video>
+    <video id="video" autoplay muted playsinline webkit-playsinline></video>
     <img id="image" alt="" />
 
     <div id="empty" class="empty">
@@ -123,14 +123,12 @@
       var PUSHER_CLUSTER = 'ap3';
       var PUSHER_EVENT = 'refresh';
 
-      var PLAYER_VERSION = '20260521-player-stable-2';
-
       var IMAGE_DURATION_SECONDS = 15;
       var SINGLE_VIDEO_REPLAY_LIMIT = 20;
 
       var HEARTBEAT_INTERVAL = 15000;
-      var VIDEO_LOAD_TIMEOUT = 12000;
-      var VIDEO_STALL_TIMEOUT = 8000;
+      var VIDEO_LOAD_TIMEOUT = 3000;
+      var VIDEO_STALL_TIMEOUT = 3000;
       var IMAGE_LOAD_TIMEOUT = 3000;
       var REQUEST_TIMEOUT = 20000;
 
@@ -224,7 +222,6 @@
       function buildHeartbeatPayload() {
         return {
           type: 'PLAYER_HEARTBEAT',
-          playerVersion: PLAYER_VERSION,
           deviceId: deviceId || 'unknown',
           url: window.location.href,
           currentIndex: currentIndex,
@@ -351,38 +348,15 @@
         } catch (e) {}
       }
 
-      function resetVideoElement() {
-        try {
-          videoEl.pause();
-        } catch (e) {}
-
-        try {
-          videoEl.removeAttribute('src');
-          videoEl.load();
-        } catch (e) {}
-      }
-
-      function detachVideoEvents() {
-        videoEl.onloadedmetadata = null;
-        videoEl.oncanplay = null;
-        videoEl.onplaying = null;
-        videoEl.onloadeddata = null;
-        videoEl.onended = null;
-        videoEl.onerror = null;
-        videoEl.onwaiting = null;
-        videoEl.onstalled = null;
-        videoEl.onabort = null;
-        videoEl.onsuspend = null;
-        videoEl.ontimeupdate = null;
-      }
-
       function hidePlayers() {
         clearTimer('image');
         clearTimer('videoLoad');
         clearTimer('videoStall');
         clearTimer('imageLoad');
 
-        resetVideoElement();
+        try {
+          videoEl.pause();
+        } catch (e) {}
 
         hideElement(videoEl);
         hideElement(imageEl);
@@ -706,73 +680,53 @@
         clearTimer('image');
         clearTimer('videoLoad');
         clearTimer('videoStall');
-        clearTimer('imageLoad');
 
         clearImageSource();
         hideElement(imageEl);
 
-        detachVideoEvents();
-        resetVideoElement();
+        videoEl.onloadedmetadata = null;
+        videoEl.oncanplay = null;
+        videoEl.onplaying = null;
+        videoEl.onloadeddata = null;
+        videoEl.onended = null;
+        videoEl.onerror = null;
+        videoEl.onwaiting = null;
+        videoEl.onstalled = null;
+        videoEl.onabort = null;
+        videoEl.onsuspend = null;
 
-        videoEl.className = videoEl.className
-          .replace(/\bshow\b/g, '')
-          .replace(/\s+/g, ' ');
+        videoEl.className = videoEl.className.replace('show', '');
         videoEl.style.display = 'none';
 
         videoEl.muted = true;
-        videoEl.defaultMuted = true;
         videoEl.autoplay = true;
         videoEl.controls = false;
         videoEl.playsInline = true;
-        videoEl.preload = 'auto';
 
-        videoEl.setAttribute('muted', 'true');
-        videoEl.setAttribute('autoplay', 'true');
         videoEl.setAttribute('playsinline', 'true');
         videoEl.setAttribute('webkit-playsinline', 'true');
-        videoEl.setAttribute('preload', 'auto');
+
+        videoEl.src = url;
 
         var hasStartedPlay = false;
-        var isPlayPending = false;
-        var hasMovedNext = false;
         var lastCurrentTime = 0;
-        var sameTimeCount = 0;
-function moveNextOnce(eventType, level, message, payload) {
-          if (hasMovedNext) return;
 
-          hasMovedNext = true;
+        videoLoadTimer = setTimeout(function () {
+          videoLoadTimer = null;
 
-          clearTimer('videoLoad');
-          clearTimer('videoStall');
-
-          detachVideoEvents();
-          resetVideoElement();
-
-          sendLog(eventType, level, message, payload);
-          playNext();
-        }
-
-        function markPlaying(reason) {
-          if (hasMovedNext) return;
-
-          hasStartedPlay = true;
-          isPlayPending = false;
-          sameTimeCount = 0;
-
-          clearTimer('videoLoad');
-          showElement(videoEl);
-resetStallTimer(reason || 'playing');
-        }
+          if (!hasStartedPlay) {
+            moveNextWithLog('VIDEO_LOAD_TIMEOUT', 'warn', 'video load timeout', {
+              url: url,
+              currentIndex: currentIndex
+            });
+          }
+        }, VIDEO_LOAD_TIMEOUT);
 
         function resetStallTimer(reason) {
-          if (!hasStartedPlay || hasMovedNext) return;
-
           clearTimer('videoStall');
 
           videoStallTimer = setTimeout(function () {
             videoStallTimer = null;
-
-            if (!hasStartedPlay || hasMovedNext) return;
 
             var currentTime = 0;
 
@@ -780,128 +734,71 @@ resetStallTimer(reason || 'playing');
               currentTime = Number(videoEl.currentTime || 0);
             } catch (e) {}
 
-            if (currentTime <= lastCurrentTime + 0.1) {
-              sameTimeCount += 1;
-            } else {
-              sameTimeCount = 0;
-            }
-
-            lastCurrentTime = currentTime;
-
-            if (sameTimeCount >= 2) {
-              singleVideoReplayCount = 0;
-
-              moveNextOnce('VIDEO_STALL_TIMEOUT', 'warn', 'video stalled too long', {
+            if (hasStartedPlay && currentTime <= lastCurrentTime + 0.1) {
+              moveNextWithLog('VIDEO_STALL_TIMEOUT', 'warn', 'video stalled too long', {
                 url: url,
                 reason: reason || '',
                 currentTime: currentTime,
-                currentIndex: currentIndex,
-                readyState: videoEl.readyState,
-                networkState: videoEl.networkState
+                lastCurrentTime: lastCurrentTime,
+                currentIndex: currentIndex
               });
               return;
             }
 
-            resetStallTimer('stall_recheck');
+            lastCurrentTime = currentTime;
           }, VIDEO_STALL_TIMEOUT);
         }
 
-        function startPlay(reason) {
-          if (hasStartedPlay || isPlayPending || hasMovedNext) return;
+        function startPlay() {
+          if (hasStartedPlay) {
+            return;
+          }
 
-          isPlayPending = true;
+          hasStartedPlay = true;
+          clearTimer('videoLoad');
+
           showElement(videoEl);
-try {
+
+          try {
             var playPromise = videoEl.play();
 
             if (playPromise && typeof playPromise.then === 'function') {
               playPromise
                 .then(function () {
-                  markPlaying(reason || 'play_resolved');
+                  showElement(videoEl);
+                  resetStallTimer('play_resolved');
                 })
                 .catch(function (error) {
-                  isPlayPending = false;
-
-                  if (hasMovedNext) return;
-
-                  var errorMessage = serializeError(error);
-
-                  if (
-                    errorMessage.indexOf('interrupted by a call to pause') >= 0 ||
-                    errorMessage.indexOf('interrupted by a new load request') >= 0
-                  ) {
-                    return;
-                  }
-
-                  singleVideoReplayCount = 0;
-
-                  moveNextOnce('VIDEO_PLAY_PROMISE_ERROR', 'warn', errorMessage, {
+                  moveNextWithLog('VIDEO_PLAY_PROMISE_ERROR', 'warn', serializeError(error), {
                     url: url,
-                    currentIndex: currentIndex,
-                    reason: reason || '',
-                    readyState: videoEl.readyState,
-                    networkState: videoEl.networkState
+                    currentIndex: currentIndex
                   });
                 });
-            } else {
-              markPlaying(reason || 'play_no_promise');
             }
           } catch (e) {
-            isPlayPending = false;
-            singleVideoReplayCount = 0;
-
-            moveNextOnce('VIDEO_PLAY_THROW_ERROR', 'warn', serializeError(e), {
+            moveNextWithLog('VIDEO_PLAY_THROW_ERROR', 'warn', serializeError(e), {
               url: url,
-              currentIndex: currentIndex,
-              reason: reason || '',
-              readyState: videoEl.readyState,
-              networkState: videoEl.networkState
+              currentIndex: currentIndex
             });
           }
         }
 
-        videoLoadTimer = setTimeout(function () {
-          videoLoadTimer = null;
-
-          if (!hasStartedPlay && !hasMovedNext) {
-            singleVideoReplayCount = 0;
-
-            moveNextOnce('VIDEO_LOAD_TIMEOUT', 'warn', 'video load timeout', {
-              url: url,
-              currentIndex: currentIndex,
-              readyState: videoEl.readyState,
-              networkState: videoEl.networkState
-            });
-          }
-        }, VIDEO_LOAD_TIMEOUT);
-
         videoEl.onloadedmetadata = function () {
-          startPlay('loadedmetadata');
+          startPlay();
         };
 
         videoEl.onloadeddata = function () {
-          if (hasMovedNext) return;
           showElement(videoEl);
-          startPlay('loadeddata');
         };
 
         videoEl.oncanplay = function () {
-          startPlay('canplay');
+          startPlay();
         };
 
         videoEl.onplaying = function () {
-          markPlaying('playing_event');
-        };
-
-        videoEl.ontimeupdate = function () {
-          if (hasMovedNext) return;
-
-          if (!hasStartedPlay && videoEl.currentTime > 0) {
-            markPlaying('timeupdate');
-            return;
-          }
-
-          lastCurrentTime = Number(videoEl.currentTime || 0);
+          clearTimer('videoLoad');
+          showElement(videoEl);
+          resetStallTimer('playing');
         };
 
         videoEl.onwaiting = function () {
@@ -912,12 +809,13 @@ try {
           resetStallTimer('stalled');
         };
 
-        videoEl.onabort = function () {};
-        videoEl.onsuspend = function () {};
+        videoEl.onabort = function () {
+        };
+
+        videoEl.onsuspend = function () {
+        };
 
         videoEl.onended = function () {
-          if (hasMovedNext) return;
-
           clearTimer('videoLoad');
           clearTimer('videoStall');
 
@@ -929,13 +827,21 @@ try {
 
             try {
               videoEl.currentTime = 0;
-              isPlayPending = false;
-              hasStartedPlay = false;
-              startPlay('single_video_replay');
+
+              var replayPromise = videoEl.play();
+
+              if (replayPromise && typeof replayPromise.then === 'function') {
+                replayPromise.catch(function (error) {
+                  singleVideoReplayCount = 0;
+                  moveNextWithLog('VIDEO_REPLAY_ERROR', 'warn', serializeError(error), {
+                    url: url,
+                    currentIndex: currentIndex
+                  });
+                });
+              }
             } catch (e) {
               singleVideoReplayCount = 0;
-
-              moveNextOnce('VIDEO_REPLAY_THROW_ERROR', 'warn', serializeError(e), {
+              moveNextWithLog('VIDEO_REPLAY_THROW_ERROR', 'warn', serializeError(e), {
                 url: url,
                 currentIndex: currentIndex
               });
@@ -945,12 +851,13 @@ try {
           }
 
           singleVideoReplayCount = 0;
-          hasMovedNext = true;
           playNext();
         };
 
         videoEl.onerror = function () {
-          if (hasMovedNext) return;
+          clearTimer('videoLoad');
+          clearTimer('videoStall');
+          singleVideoReplayCount = 0;
 
           var errorCode = null;
 
@@ -958,42 +865,34 @@ try {
             errorCode = videoEl.error ? videoEl.error.code : null;
           } catch (e) {}
 
-          singleVideoReplayCount = 0;
-
-          moveNextOnce('VIDEO_ERROR', 'error', 'video element error', {
+          moveNextWithLog('VIDEO_ERROR', 'error', 'video element error', {
             url: url,
             errorCode: errorCode,
-            currentIndex: currentIndex,
-            readyState: videoEl.readyState,
-            networkState: videoEl.networkState
+            currentIndex: currentIndex
           });
         };
 
         try {
-          videoEl.src = url;
           videoEl.load();
         } catch (e) {
+          clearTimer('videoLoad');
           singleVideoReplayCount = 0;
 
-          moveNextOnce('VIDEO_LOAD_THROW_ERROR', 'error', serializeError(e), {
+          moveNextWithLog('VIDEO_LOAD_THROW_ERROR', 'error', serializeError(e), {
             url: url,
             currentIndex: currentIndex
           });
-
-          return;
         }
 
         setTimeout(function () {
-          if (!hasMovedNext && !hasStartedPlay && !isPlayPending) {
-            startPlay('delayed_start_500');
+          if (videoEl.paused) {
+            startPlay();
+          } else {
+            clearTimer('videoLoad');
+            showElement(videoEl);
+            resetStallTimer('delayed_check');
           }
-        }, 500);
-
-        setTimeout(function () {
-          if (!hasMovedNext && !hasStartedPlay && !isPlayPending) {
-            startPlay('delayed_start_2500');
-          }
-        }, 2500);
+        }, 2000);
       }
 
       function preloadImage(url) {
@@ -1025,8 +924,9 @@ try {
         clearTimer('videoLoad');
         clearTimer('videoStall');
 
-        detachVideoEvents();
-        resetVideoElement();
+        try {
+          videoEl.pause();
+        } catch (e) {}
 
         hideElement(videoEl);
 
@@ -1072,14 +972,6 @@ try {
       function initPusher() {
         if (!deviceId) return;
 
-        if (pusherInstance) {
-          try {
-            pusherInstance.disconnect();
-          } catch (e) {}
-
-          pusherInstance = null;
-        }
-
         try {
           pusherInstance = new Pusher(PUSHER_KEY, {
             cluster: PUSHER_CLUSTER
@@ -1105,6 +997,16 @@ try {
             sendLog('PUSHER_DISCONNECTED', 'warn', 'pusher disconnected', {
               channelName: channelName
             });
+
+            try {
+              pusherInstance.disconnect();
+            } catch (e) {}
+
+            pusherInstance = null;
+
+            setTimeout(function () {
+              initPusher();
+            }, 3000);
           });
 
           pusherInstance.connection.bind('error', function (error) {
@@ -1143,12 +1045,7 @@ try {
         initKeyEvents();
         startHeartbeat();
 
-        sendLog('PLAYER_VERSION', 'info', PLAYER_VERSION, {
-          playerVersion: PLAYER_VERSION
-        });
-
         sendLog('PLAYER_PAGE_LOADED', 'info', 'tv-play page loaded', {
-          playerVersion: PLAYER_VERSION,
           userAgent: navigator.userAgent || '',
           orientation: getOrientation(),
           href: window.location.href,
@@ -1214,9 +1111,6 @@ try {
         clearTimer('videoLoad');
         clearTimer('videoStall');
         clearTimer('imageLoad');
-
-        detachVideoEvents();
-        resetVideoElement();
 
         try {
           if (pusherInstance) {
