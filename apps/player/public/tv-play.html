@@ -123,7 +123,7 @@
       var PUSHER_CLUSTER = 'ap3';
       var PUSHER_EVENT = 'refresh';
 
-      var PLAYER_VERSION = '20260521-player-stable-1';
+      var PLAYER_VERSION = '20260521-player-stable-2';
 
       var IMAGE_DURATION_SECONDS = 15;
       var SINGLE_VIDEO_REPLAY_LIMIT = 20;
@@ -1072,6 +1072,14 @@ try {
       function initPusher() {
         if (!deviceId) return;
 
+        if (pusherInstance) {
+          try {
+            pusherInstance.disconnect();
+          } catch (e) {}
+
+          pusherInstance = null;
+        }
+
         try {
           pusherInstance = new Pusher(PUSHER_KEY, {
             cluster: PUSHER_CLUSTER
@@ -1097,16 +1105,6 @@ try {
             sendLog('PUSHER_DISCONNECTED', 'warn', 'pusher disconnected', {
               channelName: channelName
             });
-
-            try {
-              pusherInstance.disconnect();
-            } catch (e) {}
-
-            pusherInstance = null;
-
-            setTimeout(function () {
-              initPusher();
-            }, 3000);
           });
 
           pusherInstance.connection.bind('error', function (error) {

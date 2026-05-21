@@ -16,7 +16,7 @@ import NetInfo from "@react-native-community/netinfo";
 
 import { sendDeviceLog, updateDeviceStatus } from "../lib/firebaseLogger";
 
-const WEB_VERSION = "20260521-5";
+const WEB_VERSION = "20260520-5";
 const START_URL = `https://info-on.cloud/tv-login.html?v=${WEB_VERSION}&nativeHeartbeat=1`;
 const PACKAGE_NAME = "com.infoon.tv";
 
@@ -815,14 +815,77 @@ export default function HomeScreen() {
     deviceIdRef.current = deviceId;
 
     let isActive = true;
+    let subscribedChannelName: string | null = null;
+
+    async function cleanupNativePusher(reason: string) {
+      const channelName = subscribedChannelName || nativeChannelRef.current;
+      const pusher = Pusher.getInstance();
+
+      try {
+        if (channelName) {
+          await pusher.unsubscribe({ channelName });
+
+          console.log("[NATIVE PUSHER] unsubscribed:", channelName, reason);
+
+          await sendDeviceLog({
+            deviceId: deviceIdRef.current,
+            eventType: "NATIVE_PUSHER_UNSUBSCRIBED",
+            level: "info",
+            message: channelName,
+            url: currentUrlRef.current,
+            payload: {
+              reason,
+            },
+          });
+        }
+      } catch (error) {
+        console.log("[NATIVE PUSHER] unsubscribe failed:", error);
+
+        await sendDeviceLog({
+          deviceId: deviceIdRef.current,
+          eventType: "NATIVE_PUSHER_UNSUBSCRIBE_FAILED",
+          level: "warn",
+          message: serializeError(error),
+          url: currentUrlRef.current,
+          payload: {
+            channelName,
+            reason,
+          },
+        });
+      }
+
+      try {
+        await pusher.disconnect();
+
+        console.log("[NATIVE PUSHER] disconnected:", reason);
+      } catch (error) {
+        console.log("[NATIVE PUSHER] disconnect failed:", error);
+
+        await sendDeviceLog({
+          deviceId: deviceIdRef.current,
+          eventType: "NATIVE_PUSHER_DISCONNECT_FAILED",
+          level: "warn",
+          message: serializeError(error),
+          url: currentUrlRef.current,
+          payload: {
+            reason,
+          },
+        });
+      } finally {
+        subscribedChannelName = null;
+        nativeChannelRef.current = null;
+      }
+    }
 
     async function setupNativePusher() {
       try {
         const channelName = `tv-native-status-${deviceId}`;
 
-        if (nativeChannelRef.current === channelName) {
-          return;
+        if (nativeChannelRef.current) {
+          await cleanupNativePusher("before_resubscribe");
         }
+
+        if (!isActive) return;
 
         const pusher = Pusher.getInstance();
 
@@ -857,6 +920,11 @@ export default function HomeScreen() {
 
         await pusher.connect();
 
+        if (!isActive) {
+          await cleanupNativePusher("inactive_after_connect");
+          return;
+        }
+
         await pusher.subscribe({
           channelName,
           onEvent: async (event: PusherEvent) => {
@@ -868,6 +936,12 @@ export default function HomeScreen() {
           },
         });
 
+        if (!isActive) {
+          await cleanupNativePusher("inactive_after_subscribe");
+          return;
+        }
+
+        subscribedChannelName = channelName;
         nativeChannelRef.current = channelName;
 
         console.log("[NATIVE PUSHER] subscribed:", channelName);
@@ -896,6 +970,8 @@ export default function HomeScreen() {
 
     return () => {
       isActive = false;
+
+      void cleanupNativePusher("effect_cleanup");
     };
   }, [deviceId, handleNativeCommand]);
 
