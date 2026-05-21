@@ -116,6 +116,8 @@
 
   <script>
     (function () {
+      var PLAYER_VERSION = '20260521-player-1';
+
       var API_URL = 'https://info-on.cloud/api-proxy';
       var LOGIN_URL = 'https://info-on.cloud/tv-login.html';
 
@@ -127,8 +129,8 @@
       var SINGLE_VIDEO_REPLAY_LIMIT = 20;
 
       var HEARTBEAT_INTERVAL = 15000;
-      var VIDEO_LOAD_TIMEOUT = 3000;
-      var VIDEO_STALL_TIMEOUT = 3000;
+      var VIDEO_LOAD_TIMEOUT = 10000;
+      var VIDEO_STALL_TIMEOUT = 10000;
       var IMAGE_LOAD_TIMEOUT = 3000;
       var REQUEST_TIMEOUT = 20000;
 
@@ -228,6 +230,7 @@
           contentsLength: contents.length,
           currentContentUrl: currentContentUrl,
           currentContentType: currentContentType,
+          playerVersion: PLAYER_VERSION,
           timestamp: Date.now()
         };
       }
@@ -235,7 +238,8 @@
       function startHeartbeat() {
         if (!isNativeHeartbeatEnabled()) {
           sendLog('PLAYER_HEARTBEAT_DISABLED', 'info', 'native heartbeat disabled', {
-            nativeHeartbeat: getQueryParam('nativeHeartbeat') || ''
+            nativeHeartbeat: getQueryParam('nativeHeartbeat') || '',
+            playerVersion: PLAYER_VERSION
           });
           return;
         }
@@ -251,7 +255,9 @@
 
         postNativeMessage(buildHeartbeatPayload());
 
-        sendLog('PLAYER_HEARTBEAT_ENABLED', 'info', 'native heartbeat enabled');
+        sendLog('PLAYER_HEARTBEAT_ENABLED', 'info', 'native heartbeat enabled', {
+          playerVersion: PLAYER_VERSION
+        });
       }
 
       function getDeviceId() {
@@ -342,6 +348,37 @@
         }
       }
 
+      function resetVideoElement() {
+        clearTimer('videoLoad');
+        clearTimer('videoStall');
+
+        try {
+          videoEl.pause();
+        } catch (e) {}
+
+        try {
+          videoEl.removeAttribute('src');
+          videoEl.load();
+        } catch (e) {}
+
+        videoEl.onloadedmetadata = null;
+        videoEl.oncanplay = null;
+        videoEl.onplaying = null;
+        videoEl.onloadeddata = null;
+        videoEl.onended = null;
+        videoEl.onerror = null;
+        videoEl.onwaiting = null;
+        videoEl.onstalled = null;
+        videoEl.onabort = null;
+        videoEl.onsuspend = null;
+
+        videoEl.className = videoEl.className
+          .replace(/\bshow\b/g, '')
+          .replace(/\s+/g, ' ');
+
+        videoEl.style.display = 'none';
+      }
+
       function clearImageSource() {
         try {
           imageEl.removeAttribute('src');
@@ -350,15 +387,9 @@
 
       function hidePlayers() {
         clearTimer('image');
-        clearTimer('videoLoad');
-        clearTimer('videoStall');
         clearTimer('imageLoad');
+        resetVideoElement();
 
-        try {
-          videoEl.pause();
-        } catch (e) {}
-
-        hideElement(videoEl);
         hideElement(imageEl);
       }
 
@@ -428,7 +459,8 @@
               sendLog('PLAYER_API_HTTP_ERROR', 'error', 'HTTP_' + res.status, {
                 path: path,
                 status: res.status,
-                responseText: typeof text === 'string' ? text.slice(0, 500) : ''
+                responseText: typeof text === 'string' ? text.slice(0, 500) : '',
+                playerVersion: PLAYER_VERSION
               });
 
               throw new Error('HTTP_' + res.status);
@@ -438,7 +470,8 @@
           });
         }).catch(function (error) {
           sendLog('PLAYER_API_FETCH_ERROR', 'error', serializeError(error), {
-            path: path
+            path: path,
+            playerVersion: PLAYER_VERSION
           });
 
           throw error;
@@ -535,7 +568,8 @@
         if (!devices.length || !deviceId) {
           sendLog('PLAYER_DEVICE_NOT_FOUND', 'warn', 'device list empty or deviceId missing', {
             hasDeviceId: !!deviceId,
-            devicesLength: devices.length
+            devicesLength: devices.length,
+            playerVersion: PLAYER_VERSION
           });
           return [];
         }
@@ -551,7 +585,8 @@
 
         if (!matchedDevice || !matchedDevice.playlists) {
           sendLog('PLAYER_PLAYLIST_NOT_FOUND', 'warn', 'matched device playlist not found', {
-            deviceId: deviceId
+            deviceId: deviceId,
+            playerVersion: PLAYER_VERSION
           });
           return [];
         }
@@ -578,7 +613,8 @@
 
         if (!result.length) {
           sendLog('PLAYER_CONTENTS_EMPTY', 'warn', 'playlist has no contents', {
-            deviceId: deviceId
+            deviceId: deviceId,
+            playerVersion: PLAYER_VERSION
           });
         }
 
@@ -594,7 +630,8 @@
         showLoading(true);
 
         sendLog('PLAYER_REFRESH_START', 'info', 'refresh contents start', {
-          reason: reason || 'unknown'
+          reason: reason || 'unknown',
+          playerVersion: PLAYER_VERSION
         });
 
         fetchDevices()
@@ -607,7 +644,8 @@
 
             sendLog('PLAYER_REFRESH_SUCCESS', 'info', 'refresh contents success', {
               reason: reason || 'unknown',
-              contentsLength: contents.length
+              contentsLength: contents.length,
+              playerVersion: PLAYER_VERSION
             });
 
             if (!contents.length) {
@@ -621,7 +659,8 @@
           })
           .catch(function (error) {
             sendLog('PLAYER_REFRESH_ERROR', 'error', serializeError(error), {
-              reason: reason || 'unknown'
+              reason: reason || 'unknown',
+              playerVersion: PLAYER_VERSION
             });
 
             if (!contents.length) {
@@ -656,7 +695,8 @@
         if (!url) {
           sendLog('CONTENT_URL_EMPTY', 'warn', 'content url empty', {
             currentIndex: currentIndex,
-            item: item
+            item: item,
+            playerVersion: PLAYER_VERSION
           });
 
           playNext();
@@ -673,6 +713,7 @@
 
       function moveNextWithLog(eventType, level, message, payload) {
         sendLog(eventType, level, message, payload);
+        resetVideoElement();
         playNext();
       }
 
@@ -684,21 +725,7 @@
         clearImageSource();
         hideElement(imageEl);
 
-        videoEl.onloadedmetadata = null;
-        videoEl.oncanplay = null;
-        videoEl.onplaying = null;
-        videoEl.onloadeddata = null;
-        videoEl.onended = null;
-        videoEl.onerror = null;
-        videoEl.onwaiting = null;
-        videoEl.onstalled = null;
-        videoEl.onabort = null;
-        videoEl.onsuspend = null;
-
-        videoEl.className = videoEl.className
-          .replace(/\bshow\b/g, '')
-          .replace(/\s+/g, ' ');
-        videoEl.style.display = 'block';
+        resetVideoElement();
 
         videoEl.muted = true;
         videoEl.autoplay = true;
@@ -708,43 +735,41 @@
         videoEl.setAttribute('playsinline', 'true');
         videoEl.setAttribute('webkit-playsinline', 'true');
 
+        videoEl.className = videoEl.className
+          .replace(/\bshow\b/g, '')
+          .replace(/\s+/g, ' ');
+
+        videoEl.style.display = 'block';
         videoEl.src = url;
 
         var hasStartedPlay = false;
         var hasMovedNext = false;
         var lastCurrentTime = 0;
 
-        function moveNextOnceWithLog(eventType, level, message, payload) {
+        function moveNextOnce(eventType, level, message, payload) {
           if (hasMovedNext) return;
           hasMovedNext = true;
 
-          clearTimer('videoLoad');
-          clearTimer('videoStall');
-
-          sendLog(eventType, level, message, payload);
-          playNext();
+          moveNextWithLog(eventType, level, message, payload);
         }
 
         videoLoadTimer = setTimeout(function () {
           videoLoadTimer = null;
 
           if (!hasStartedPlay) {
-            moveNextOnceWithLog('VIDEO_LOAD_TIMEOUT', 'warn', 'video load timeout', {
+            moveNextOnce('VIDEO_LOAD_TIMEOUT', 'warn', 'video load timeout', {
               url: url,
-              currentIndex: currentIndex
+              currentIndex: currentIndex,
+              playerVersion: PLAYER_VERSION
             });
           }
         }, VIDEO_LOAD_TIMEOUT);
 
         function resetStallTimer(reason) {
-          if (hasMovedNext) return;
-
           clearTimer('videoStall');
 
           videoStallTimer = setTimeout(function () {
             videoStallTimer = null;
-
-            if (hasMovedNext) return;
 
             var currentTime = 0;
 
@@ -753,12 +778,13 @@
             } catch (e) {}
 
             if (hasStartedPlay && currentTime <= lastCurrentTime + 0.1) {
-              moveNextOnceWithLog('VIDEO_STALL_TIMEOUT', 'warn', 'video stalled too long', {
+              moveNextOnce('VIDEO_STALL_TIMEOUT', 'warn', 'video stalled too long', {
                 url: url,
                 reason: reason || '',
                 currentTime: currentTime,
                 lastCurrentTime: lastCurrentTime,
-                currentIndex: currentIndex
+                currentIndex: currentIndex,
+                playerVersion: PLAYER_VERSION
               });
               return;
             }
@@ -774,6 +800,7 @@
 
           hasStartedPlay = true;
           clearTimer('videoLoad');
+
           showElement(videoEl);
 
           try {
@@ -783,22 +810,25 @@
               playPromise
                 .then(function () {
                   if (hasMovedNext) return;
+
                   showElement(videoEl);
                   resetStallTimer('play_resolved');
                 })
                 .catch(function (error) {
-                  if (hasMovedNext) return;
-
-                  moveNextOnceWithLog('VIDEO_PLAY_PROMISE_ERROR', 'warn', serializeError(error), {
+                  moveNextOnce('VIDEO_PLAY_PROMISE_ERROR', 'warn', serializeError(error), {
                     url: url,
-                    currentIndex: currentIndex
+                    currentIndex: currentIndex,
+                    playerVersion: PLAYER_VERSION
                   });
                 });
+            } else {
+              resetStallTimer('play_no_promise');
             }
           } catch (e) {
-            moveNextOnceWithLog('VIDEO_PLAY_THROW_ERROR', 'warn', serializeError(e), {
+            moveNextOnce('VIDEO_PLAY_THROW_ERROR', 'warn', serializeError(e), {
               url: url,
-              currentIndex: currentIndex
+              currentIndex: currentIndex,
+              playerVersion: PLAYER_VERSION
             });
           }
         }
@@ -818,24 +848,24 @@
 
         videoEl.onplaying = function () {
           if (hasMovedNext) return;
+
           clearTimer('videoLoad');
           showElement(videoEl);
           resetStallTimer('playing');
         };
 
         videoEl.onwaiting = function () {
+          if (hasMovedNext) return;
           resetStallTimer('waiting');
         };
 
         videoEl.onstalled = function () {
+          if (hasMovedNext) return;
           resetStallTimer('stalled');
         };
 
-        videoEl.onabort = function () {
-        };
-
-        videoEl.onsuspend = function () {
-        };
+        videoEl.onabort = function () {};
+        videoEl.onsuspend = function () {};
 
         videoEl.onended = function () {
           if (hasMovedNext) return;
@@ -857,17 +887,19 @@
               if (replayPromise && typeof replayPromise.then === 'function') {
                 replayPromise.catch(function (error) {
                   singleVideoReplayCount = 0;
-                  moveNextOnceWithLog('VIDEO_REPLAY_ERROR', 'warn', serializeError(error), {
+                  moveNextOnce('VIDEO_REPLAY_ERROR', 'warn', serializeError(error), {
                     url: url,
-                    currentIndex: currentIndex
+                    currentIndex: currentIndex,
+                    playerVersion: PLAYER_VERSION
                   });
                 });
               }
             } catch (e) {
               singleVideoReplayCount = 0;
-              moveNextOnceWithLog('VIDEO_REPLAY_THROW_ERROR', 'warn', serializeError(e), {
+              moveNextOnce('VIDEO_REPLAY_THROW_ERROR', 'warn', serializeError(e), {
                 url: url,
-                currentIndex: currentIndex
+                currentIndex: currentIndex,
+                playerVersion: PLAYER_VERSION
               });
             }
 
@@ -875,11 +907,13 @@
           }
 
           singleVideoReplayCount = 0;
-          hasMovedNext = true;
+          resetVideoElement();
           playNext();
         };
 
         videoEl.onerror = function () {
+          if (hasMovedNext) return;
+
           clearTimer('videoLoad');
           clearTimer('videoStall');
           singleVideoReplayCount = 0;
@@ -890,10 +924,11 @@
             errorCode = videoEl.error ? videoEl.error.code : null;
           } catch (e) {}
 
-          moveNextOnceWithLog('VIDEO_ERROR', 'error', 'video element error', {
+          moveNextOnce('VIDEO_ERROR', 'error', 'video element error', {
             url: url,
             errorCode: errorCode,
-            currentIndex: currentIndex
+            currentIndex: currentIndex,
+            playerVersion: PLAYER_VERSION
           });
         };
 
@@ -903,9 +938,10 @@
           clearTimer('videoLoad');
           singleVideoReplayCount = 0;
 
-          moveNextOnceWithLog('VIDEO_LOAD_THROW_ERROR', 'error', serializeError(e), {
+          moveNextOnce('VIDEO_LOAD_THROW_ERROR', 'error', serializeError(e), {
             url: url,
-            currentIndex: currentIndex
+            currentIndex: currentIndex,
+            playerVersion: PLAYER_VERSION
           });
         }
 
@@ -948,14 +984,8 @@
       function playImage(url, duration) {
         clearTimer('image');
         clearTimer('imageLoad');
-        clearTimer('videoLoad');
-        clearTimer('videoStall');
 
-        try {
-          videoEl.pause();
-        } catch (e) {}
-
-        hideElement(videoEl);
+        resetVideoElement();
 
         preloadImage(url)
           .then(function () {
@@ -964,7 +994,8 @@
             imageEl.onerror = function () {
               moveNextWithLog('IMAGE_ELEMENT_ERROR', 'error', 'image element error', {
                 url: url,
-                currentIndex: currentIndex
+                currentIndex: currentIndex,
+                playerVersion: PLAYER_VERSION
               });
             };
 
@@ -979,7 +1010,8 @@
           .catch(function (error) {
             moveNextWithLog('IMAGE_PRELOAD_ERROR', 'error', serializeError(error), {
               url: url,
-              currentIndex: currentIndex
+              currentIndex: currentIndex,
+              playerVersion: PLAYER_VERSION
             });
           });
       }
@@ -1009,20 +1041,23 @@
 
           channel.bind(PUSHER_EVENT, function () {
             sendLog('PUSHER_REFRESH_RECEIVED', 'info', 'pusher refresh received', {
-              channelName: channelName
+              channelName: channelName,
+              playerVersion: PLAYER_VERSION
             });
             refreshContents('pusher');
           });
 
           pusherInstance.connection.bind('connected', function () {
             sendLog('PUSHER_CONNECTED', 'info', 'pusher connected', {
-              channelName: channelName
+              channelName: channelName,
+              playerVersion: PLAYER_VERSION
             });
           });
 
           pusherInstance.connection.bind('disconnected', function () {
             sendLog('PUSHER_DISCONNECTED', 'warn', 'pusher disconnected', {
-              channelName: channelName
+              channelName: channelName,
+              playerVersion: PLAYER_VERSION
             });
 
             try {
@@ -1038,11 +1073,14 @@
 
           pusherInstance.connection.bind('error', function (error) {
             sendLog('PUSHER_ERROR', 'warn', serializeError(error), {
-              channelName: channelName
+              channelName: channelName,
+              playerVersion: PLAYER_VERSION
             });
           });
         } catch (e) {
-          sendLog('PUSHER_INIT_ERROR', 'error', serializeError(e));
+          sendLog('PUSHER_INIT_ERROR', 'error', serializeError(e), {
+            playerVersion: PLAYER_VERSION
+          });
 
           setTimeout(function () {
             initPusher();
@@ -1072,16 +1110,24 @@
         initKeyEvents();
         startHeartbeat();
 
+        sendLog('PLAYER_VERSION', 'info', PLAYER_VERSION, {
+          playerVersion: PLAYER_VERSION,
+          href: window.location.href
+        });
+
         sendLog('PLAYER_PAGE_LOADED', 'info', 'tv-play page loaded', {
           userAgent: navigator.userAgent || '',
           orientation: getOrientation(),
           href: window.location.href,
           deviceId: deviceId || '',
-          nativeHeartbeat: getQueryParam('nativeHeartbeat') || ''
+          nativeHeartbeat: getQueryParam('nativeHeartbeat') || '',
+          playerVersion: PLAYER_VERSION
         });
 
         if (!deviceId) {
-          sendLog('PLAYER_DEVICE_ID_MISSING', 'error', 'deviceId missing. redirect to login');
+          sendLog('PLAYER_DEVICE_ID_MISSING', 'error', 'deviceId missing. redirect to login', {
+            playerVersion: PLAYER_VERSION
+          });
 
           setTimeout(function () {
             redirectToLogin();
@@ -1101,12 +1147,16 @@
       });
 
       window.addEventListener('online', function () {
-        sendLog('PLAYER_NETWORK_ONLINE', 'info', 'browser online event');
+        sendLog('PLAYER_NETWORK_ONLINE', 'info', 'browser online event', {
+          playerVersion: PLAYER_VERSION
+        });
         refreshContents('online');
       });
 
       window.addEventListener('offline', function () {
-        sendLog('PLAYER_NETWORK_OFFLINE', 'warn', 'browser offline event');
+        sendLog('PLAYER_NETWORK_OFFLINE', 'warn', 'browser offline event', {
+          playerVersion: PLAYER_VERSION
+        });
       });
 
       window.onerror = function (message, source, lineno, colno, error) {
@@ -1114,14 +1164,17 @@
           message: message,
           source: source,
           lineno: lineno,
-          colno: colno
+          colno: colno,
+          playerVersion: PLAYER_VERSION
         });
 
         return true;
       };
 
       window.onunhandledrejection = function (event) {
-        sendLog('PLAYER_UNHANDLED_REJECTION', 'error', serializeError(event && event.reason), {});
+        sendLog('PLAYER_UNHANDLED_REJECTION', 'error', serializeError(event && event.reason), {
+          playerVersion: PLAYER_VERSION
+        });
         return true;
       };
 
@@ -1135,9 +1188,8 @@
         }
 
         clearTimer('image');
-        clearTimer('videoLoad');
-        clearTimer('videoStall');
         clearTimer('imageLoad');
+        resetVideoElement();
 
         try {
           if (pusherInstance) {
