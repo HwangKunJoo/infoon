@@ -127,8 +127,8 @@
       var SINGLE_VIDEO_REPLAY_LIMIT = 20;
 
       var HEARTBEAT_INTERVAL = 15000;
-      var VIDEO_LOAD_TIMEOUT = 3000;
-      var VIDEO_STALL_TIMEOUT = 3000;
+      var VIDEO_LOAD_TIMEOUT = 10000;
+      var VIDEO_STALL_TIMEOUT = 10000;
       var IMAGE_LOAD_TIMEOUT = 3000;
       var REQUEST_TIMEOUT = 20000;
 
@@ -158,6 +158,8 @@
       var singleVideoReplayCount = 0;
       var currentContentUrl = '';
       var currentContentType = '';
+      var playSessionId = 0;
+      var lastImageUrl = '';
 
       function safeGet(key) {
         try { return localStorage.getItem(key); } catch (e) { return null; }
@@ -346,6 +348,25 @@
         try {
           imageEl.removeAttribute('src');
         } catch (e) {}
+      }
+
+      function isCurrentPlaySession(sessionId) {
+        return sessionId === playSessionId;
+      }
+
+      function showLastImagePlaceholder() {
+        if (!lastImageUrl) return false;
+
+        try {
+          if (imageEl.getAttribute('src') !== lastImageUrl) {
+            imageEl.src = lastImageUrl;
+          }
+
+          showElement(imageEl);
+          return true;
+        } catch (e) {
+          return false;
+        }
       }
 
       function hidePlayers() {
@@ -677,12 +698,18 @@
       }
 
       function playVideo(url) {
+        playSessionId += 1;
+
+        var sessionId = playSessionId;
+        var hasPlaceholder = showLastImagePlaceholder();
+
         clearTimer('image');
         clearTimer('videoLoad');
         clearTimer('videoStall');
 
-        clearImageSource();
-        hideElement(imageEl);
+        if (hasPlaceholder) {
+          hideElement(videoEl);
+        }
 
         videoEl.onloadedmetadata = null;
         videoEl.oncanplay = null;
@@ -709,10 +736,15 @@
         videoEl.src = url;
 
         var hasStartedPlay = false;
+        var hasRequestedPlay = false;
         var lastCurrentTime = 0;
 
         videoLoadTimer = setTimeout(function () {
           videoLoadTimer = null;
+
+          if (!isCurrentPlaySession(sessionId)) {
+            return;
+          }
 
           if (!hasStartedPlay) {
             moveNextWithLog('VIDEO_LOAD_TIMEOUT', 'warn', 'video load timeout', {
@@ -723,10 +755,18 @@
         }, VIDEO_LOAD_TIMEOUT);
 
         function resetStallTimer(reason) {
+          if (!isCurrentPlaySession(sessionId)) {
+            return;
+          }
+
           clearTimer('videoStall');
 
           videoStallTimer = setTimeout(function () {
             videoStallTimer = null;
+
+            if (!isCurrentPlaySession(sessionId)) {
+              return;
+            }
 
             var currentTime = 0;
 
@@ -749,8 +789,8 @@
           }, VIDEO_STALL_TIMEOUT);
         }
 
-        function startPlay() {
-          if (hasStartedPlay) {
+        function showVideoAfterReady(reason) {
+          if (!isCurrentPlaySession(sessionId)) {
             return;
           }
 
@@ -758,6 +798,20 @@
           clearTimer('videoLoad');
 
           showElement(videoEl);
+          hideElement(imageEl);
+          resetStallTimer(reason || 'ready');
+        }
+
+        function startPlay() {
+          if (!isCurrentPlaySession(sessionId)) {
+            return;
+          }
+
+          if (hasRequestedPlay) {
+            return;
+          }
+
+          hasRequestedPlay = true;
 
           try {
             var playPromise = videoEl.play();
@@ -765,17 +819,26 @@
             if (playPromise && typeof playPromise.then === 'function') {
               playPromise
                 .then(function () {
-                  showElement(videoEl);
-                  resetStallTimer('play_resolved');
+                  showVideoAfterReady('play_resolved');
                 })
                 .catch(function (error) {
+                  if (!isCurrentPlaySession(sessionId)) {
+                    return;
+                  }
+
                   moveNextWithLog('VIDEO_PLAY_PROMISE_ERROR', 'warn', serializeError(error), {
                     url: url,
                     currentIndex: currentIndex
                   });
                 });
+            } else {
+              showVideoAfterReady('play_no_promise');
             }
           } catch (e) {
+            if (!isCurrentPlaySession(sessionId)) {
+              return;
+            }
+
             moveNextWithLog('VIDEO_PLAY_THROW_ERROR', 'warn', serializeError(e), {
               url: url,
               currentIndex: currentIndex
@@ -788,7 +851,7 @@
         };
 
         videoEl.onloadeddata = function () {
-          showElement(videoEl);
+          startPlay();
         };
 
         videoEl.oncanplay = function () {
@@ -796,9 +859,7 @@
         };
 
         videoEl.onplaying = function () {
-          clearTimer('videoLoad');
-          showElement(videoEl);
-          resetStallTimer('playing');
+          showVideoAfterReady('playing');
         };
 
         videoEl.onwaiting = function () {
@@ -816,6 +877,10 @@
         };
 
         videoEl.onended = function () {
+          if (!isCurrentPlaySession(sessionId)) {
+            return;
+          }
+
           clearTimer('videoLoad');
           clearTimer('videoStall');
 
@@ -832,6 +897,10 @@
 
               if (replayPromise && typeof replayPromise.then === 'function') {
                 replayPromise.catch(function (error) {
+                  if (!isCurrentPlaySession(sessionId)) {
+                    return;
+                  }
+
                   singleVideoReplayCount = 0;
                   moveNextWithLog('VIDEO_REPLAY_ERROR', 'warn', serializeError(error), {
                     url: url,
@@ -840,6 +909,10 @@
                 });
               }
             } catch (e) {
+              if (!isCurrentPlaySession(sessionId)) {
+                return;
+              }
+
               singleVideoReplayCount = 0;
               moveNextWithLog('VIDEO_REPLAY_THROW_ERROR', 'warn', serializeError(e), {
                 url: url,
@@ -855,6 +928,10 @@
         };
 
         videoEl.onerror = function () {
+          if (!isCurrentPlaySession(sessionId)) {
+            return;
+          }
+
           clearTimer('videoLoad');
           clearTimer('videoStall');
           singleVideoReplayCount = 0;
@@ -875,6 +952,10 @@
         try {
           videoEl.load();
         } catch (e) {
+          if (!isCurrentPlaySession(sessionId)) {
+            return;
+          }
+
           clearTimer('videoLoad');
           singleVideoReplayCount = 0;
 
@@ -885,12 +966,14 @@
         }
 
         setTimeout(function () {
+          if (!isCurrentPlaySession(sessionId)) {
+            return;
+          }
+
           if (videoEl.paused) {
             startPlay();
           } else {
-            clearTimer('videoLoad');
-            showElement(videoEl);
-            resetStallTimer('delayed_check');
+            showVideoAfterReady('delayed_check');
           }
         }, 2000);
       }
@@ -919,6 +1002,10 @@
       }
 
       function playImage(url, duration) {
+        playSessionId += 1;
+
+        var sessionId = playSessionId;
+
         clearTimer('image');
         clearTimer('imageLoad');
         clearTimer('videoLoad');
@@ -932,24 +1019,41 @@
 
         preloadImage(url)
           .then(function () {
+            if (!isCurrentPlaySession(sessionId)) {
+              return;
+            }
+
             imageEl.onload = function () {};
 
             imageEl.onerror = function () {
+              if (!isCurrentPlaySession(sessionId)) {
+                return;
+              }
+
               moveNextWithLog('IMAGE_ELEMENT_ERROR', 'error', 'image element error', {
                 url: url,
                 currentIndex: currentIndex
               });
             };
 
+            lastImageUrl = url;
             imageEl.src = url;
 
             showElement(imageEl);
 
             imageTimer = setTimeout(function () {
+              if (!isCurrentPlaySession(sessionId)) {
+                return;
+              }
+
               playNext();
             }, Math.max(1, duration) * 1000);
           })
           .catch(function (error) {
+            if (!isCurrentPlaySession(sessionId)) {
+              return;
+            }
+
             moveNextWithLog('IMAGE_PRELOAD_ERROR', 'error', serializeError(error), {
               url: url,
               currentIndex: currentIndex

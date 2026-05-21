@@ -16,7 +16,7 @@ import NetInfo from "@react-native-community/netinfo";
 
 import { sendDeviceLog, updateDeviceStatus } from "../lib/firebaseLogger";
 
-const WEB_VERSION = "20260520-1";
+const WEB_VERSION = "20260521-2";
 const START_URL = `https://info-on.cloud/tv-login.html?v=${WEB_VERSION}&nativeHeartbeat=1`;
 const PACKAGE_NAME = "com.infoon.tv";
 
