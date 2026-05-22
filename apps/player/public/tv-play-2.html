@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Video Only Test</title>
+  <title>Video Only Debug</title>
 
   <style>
     * {
@@ -43,14 +43,14 @@
       left: 12px;
       top: 12px;
       z-index: 9999;
-      width: min(900px, calc(100vw - 24px));
-      max-height: 70vh;
+      width: min(980px, calc(100vw - 24px));
+      max-height: 78vh;
       overflow: hidden;
-      padding: 10px 12px;
+      padding: 12px 14px;
       border-radius: 8px;
-      background: rgba(0, 0, 0, 0.72);
+      background: rgba(0, 0, 0, 0.78);
       color: #00ff90;
-      font-size: 13px;
+      font-size: 14px;
       line-height: 1.45;
       font-family: Menlo, Monaco, Consolas, monospace;
       white-space: pre-wrap;
@@ -85,15 +85,15 @@
     ></video>
 
     <div id="debugPanel">loading...</div>
-    <div id="badge">tv-play-2 / video-only-debug</div>
+    <div id="badge">tv-play-2 / safe-url-debug</div>
   </div>
 
   <script>
     (function () {
       var VIDEOS = [
-        'https://s3.ap-northeast-2.amazonaws.com/onldo/digital_contents/5월2주차_고등_가로 (1)_safe.mp4',
-        'https://s3.ap-northeast-2.amazonaws.com/onldo/digital_contents/5월2주차_고등_가로 (3)_safe.mp4',
-        'https://s3.ap-northeast-2.amazonaws.com/onldo/digital_contents/5월2주차_고등_가로 (4)_safe.mp4'
+        'https://s3.ap-northeast-2.amazonaws.com/onldo/digital_contents/0522_test_1_safe.mp4',
+        'https://s3.ap-northeast-2.amazonaws.com/onldo/digital_contents/0522_test_2_safe.mp4',
+        'https://s3.ap-northeast-2.amazonaws.com/onldo/digital_contents/0522_test_3_safe.mp4'
       ];
 
       var videoEl = document.getElementById('video');
@@ -102,8 +102,9 @@
       var currentIndex = 0;
       var loadTimer = null;
       var playTimer = null;
-      var heartbeatTimer = null;
+      var statusTimer = null;
       var logs = [];
+      var isStoppedOnError = false;
 
       var LOAD_TIMEOUT = 20000;
 
@@ -117,12 +118,22 @@
         );
       }
 
+      function getErrorCode() {
+        try {
+          return videoEl.error ? videoEl.error.code : null;
+        } catch (e) {
+          return null;
+        }
+      }
+
       function getVideoState() {
-        var errorCode = null;
+        var duration = 0;
 
         try {
-          errorCode = videoEl.error ? videoEl.error.code : null;
-        } catch (e) {}
+          duration = Number(videoEl.duration || 0);
+        } catch (e) {
+          duration = 0;
+        }
 
         return [
           'index=' + (currentIndex + 1) + '/' + VIDEOS.length,
@@ -131,8 +142,8 @@
           'paused=' + videoEl.paused,
           'ended=' + videoEl.ended,
           'currentTime=' + Number(videoEl.currentTime || 0).toFixed(1),
-          'duration=' + Number(videoEl.duration || 0).toFixed(1),
-          'error=' + errorCode
+          'duration=' + duration.toFixed(1),
+          'error=' + getErrorCode()
         ].join(' | ');
       }
 
@@ -140,11 +151,13 @@
         var currentUrl = VIDEOS[currentIndex] || '';
 
         debugPanel.textContent =
-          'tv-play-2 / video-only-debug\n' +
+          'tv-play-2 / safe-url-debug\n' +
           getVideoState() + '\n' +
           'src=' + currentUrl + '\n' +
-          '----------------------------------------\n' +
-          logs.slice(-30).join('\n');
+          'control: Enter=play, →=next, ←=prev, R=reload\n' +
+          'stoppedOnError=' + isStoppedOnError + '\n' +
+          '--------------------------------------------------\n' +
+          logs.slice(-18).join('\n');
       }
 
       function log(message) {
@@ -193,6 +206,8 @@
       }
 
       function playCurrent(reason) {
+        isStoppedOnError = false;
+
         resetVideo();
         setVideoAttributes();
 
@@ -200,12 +215,16 @@
         var encodedUrl = encodeURI(rawUrl);
 
         log('LOAD_START reason=' + (reason || 'init'));
-        log('RAW_URL=' + rawUrl);
-        log('ENCODED_URL=' + encodedUrl);
+        log('URL=' + encodedUrl);
 
         loadTimer = setTimeout(function () {
-          log('LOAD_TIMEOUT after ' + LOAD_TIMEOUT + 'ms / ' + getVideoState());
-          nextVideo('load_timeout');
+          clearTimers();
+
+          isStoppedOnError = true;
+
+          log('LOAD_TIMEOUT after ' + LOAD_TIMEOUT + 'ms');
+          log('STOPPED. Press Enter to retry, → for next video.');
+          renderLogs();
         }, LOAD_TIMEOUT);
 
         try {
@@ -213,8 +232,13 @@
           videoEl.load();
           log('video.load() called');
         } catch (e) {
+          clearTimers();
+
+          isStoppedOnError = true;
+
           log('LOAD_THROW ' + String(e && e.message ? e.message : e));
-          nextVideo('load_throw');
+          log('STOPPED. Press Enter to retry, → for next video.');
+          renderLogs();
           return;
         }
 
@@ -226,6 +250,11 @@
       }
 
       function tryPlay(reason) {
+        if (isStoppedOnError) {
+          log('PLAY_SKIPPED stoppedOnError=true');
+          return;
+        }
+
         log('PLAY_ATTEMPT reason=' + reason + ' / ' + getVideoState());
 
         try {
@@ -238,37 +267,37 @@
                 log('PLAY_RESOLVED reason=' + reason + ' / ' + getVideoState());
               })
               .catch(function (error) {
+                clearTimers();
+
+                isStoppedOnError = true;
+
                 log(
                   'PLAY_PROMISE_ERROR reason=' + reason +
-                  ' message=' + String(error && error.message ? error.message : error) +
-                  ' / ' + getVideoState()
+                  ' message=' + String(error && error.message ? error.message : error)
                 );
-
-                setTimeout(function () {
-                  nextVideo('play_promise_error');
-                }, 1000);
+                log('STOPPED. Press Enter to retry, → for next video.');
+                renderLogs();
               });
           } else {
             clearTimers();
             log('PLAY_NO_PROMISE reason=' + reason + ' / ' + getVideoState());
           }
         } catch (e) {
+          clearTimers();
+
+          isStoppedOnError = true;
+
           log(
             'PLAY_THROW reason=' + reason +
-            ' message=' + String(e && e.message ? e.message : e) +
-            ' / ' + getVideoState()
+            ' message=' + String(e && e.message ? e.message : e)
           );
-
-          setTimeout(function () {
-            nextVideo('play_throw');
-          }, 1000);
+          log('STOPPED. Press Enter to retry, → for next video.');
+          renderLogs();
         }
       }
 
       function nextVideo(reason) {
         clearTimers();
-
-        log('NEXT_VIDEO reason=' + reason);
 
         currentIndex += 1;
 
@@ -276,9 +305,34 @@
           currentIndex = 0;
         }
 
-        setTimeout(function () {
-          playCurrent(reason);
-        }, 500);
+        logs = [];
+        log('NEXT_VIDEO reason=' + reason);
+
+        playCurrent(reason);
+      }
+
+      function prevVideo(reason) {
+        clearTimers();
+
+        currentIndex -= 1;
+
+        if (currentIndex < 0) {
+          currentIndex = VIDEOS.length - 1;
+        }
+
+        logs = [];
+        log('PREV_VIDEO reason=' + reason);
+
+        playCurrent(reason);
+      }
+
+      function reloadCurrent(reason) {
+        clearTimers();
+
+        logs = [];
+        log('RELOAD_CURRENT reason=' + reason);
+
+        playCurrent(reason);
       }
 
       videoEl.onloadedmetadata = function () {
@@ -297,6 +351,8 @@
 
       videoEl.onplaying = function () {
         clearTimers();
+        isStoppedOnError = false;
+
         log('EVENT playing / ' + getVideoState());
       };
 
@@ -325,39 +381,47 @@
       };
 
       videoEl.onerror = function () {
-        var code = null;
+        clearTimers();
 
-        try {
-          code = videoEl.error ? videoEl.error.code : null;
-        } catch (e) {}
+        isStoppedOnError = true;
 
-        log('EVENT error code=' + code + ' / ' + getVideoState());
-
-        setTimeout(function () {
-          nextVideo('video_error_' + code);
-        }, 1000);
+        log('EVENT error code=' + getErrorCode() + ' / ' + getVideoState());
+        log('STOPPED. Press Enter to retry, → for next video.');
+        renderLogs();
       };
 
       videoEl.onended = function () {
         log('EVENT ended / ' + getVideoState());
-        nextVideo('ended');
+
+        setTimeout(function () {
+          nextVideo('ended');
+        }, 1000);
       };
 
-      videoEl.ontimeupdate = function () {
-        renderLogs();
-      };
-
-      heartbeatTimer = setInterval(function () {
+      statusTimer = setInterval(function () {
         renderLogs();
       }, 1000);
 
       window.addEventListener('keydown', function (e) {
         if (e.key === 'ArrowRight' || e.keyCode === 39) {
           nextVideo('manual_next');
+          return;
+        }
+
+        if (e.key === 'ArrowLeft' || e.keyCode === 37) {
+          prevVideo('manual_prev');
+          return;
         }
 
         if (e.key === 'Enter' || e.keyCode === 13) {
+          isStoppedOnError = false;
           tryPlay('manual_enter');
+          return;
+        }
+
+        if (e.key === 'r' || e.key === 'R' || e.keyCode === 82) {
+          reloadCurrent('manual_reload');
+          return;
         }
       });
 
