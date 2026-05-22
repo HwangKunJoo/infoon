@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Video Test</title>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      background: #000;
+      overflow: hidden;
+      font-family: Arial, Helvetica, sans-serif;
+    }
+
+    #stage {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      background: #000;
+      overflow: hidden;
+    }
+
+    video {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      background: #000;
+      object-fit: contain;
+    }
+
+    #badge {
+      position: fixed;
+      left: 12px;
+      bottom: 12px;
+      z-index: 9999;
+      color: #fff;
+      background: rgba(0, 0, 0, 0.65);
+      font-size: 14px;
+      padding: 6px 10px;
+      border-radius: 8px;
+    }
+
+    #status {
+      position: fixed;
+      left: 12px;
+      top: 12px;
+      z-index: 9999;
+      color: #fff;
+      background: rgba(0, 0, 0, 0.65);
+      font-size: 14px;
+      line-height: 1.5;
+      padding: 8px 10px;
+      border-radius: 8px;
+      max-width: 80vw;
+      word-break: break-all;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="stage">
+    <video
+      id="video"
+      autoplay
+      muted
+      playsinline
+      webkit-playsinline
+      preload="auto"
+      controls
+    ></video>
+
+    <div id="status">init</div>
+    <div id="badge">tv-play-2 / video-only-test</div>
+  </div>
+
+  <script>
+    (function () {
+      var VIDEOS = [
+        'https://s3.ap-northeast-2.amazonaws.com/onldo/digital_contents/5월3주차_고등_가로 (1).mp4',
+        'https://s3.ap-northeast-2.amazonaws.com/onldo/digital_contents/5월3주차_고등_가로 (3).mp4',
+        'https://s3.ap-northeast-2.amazonaws.com/onldo/digital_contents/5월3주차_고등_가로 (4).mp4'
+      ];
+
+      var videoEl = document.getElementById('video');
+      var statusEl = document.getElementById('status');
+
+      var currentIndex = 0;
+      var loadTimer = null;
+      var playTimer = null;
+
+      var LOAD_TIMEOUT = 20000;
+
+      function setStatus(message) {
+        var url = VIDEOS[currentIndex] || '';
+
+        statusEl.innerHTML =
+          'status: ' + message +
+          '<br>index: ' + (currentIndex + 1) + ' / ' + VIDEOS.length +
+          '<br>readyState: ' + videoEl.readyState +
+          '<br>networkState: ' + videoEl.networkState +
+          '<br>currentTime: ' + Math.floor(videoEl.currentTime || 0) +
+          '<br>src: ' + url;
+      }
+
+      function clearTimers() {
+        if (loadTimer) {
+          clearTimeout(loadTimer);
+          loadTimer = null;
+        }
+
+        if (playTimer) {
+          clearTimeout(playTimer);
+          playTimer = null;
+        }
+      }
+
+      function resetVideo() {
+        clearTimers();
+
+        try {
+          videoEl.pause();
+        } catch (e) {}
+
+        try {
+          videoEl.removeAttribute('src');
+          videoEl.load();
+        } catch (e) {}
+      }
+
+      function playCurrent(reason) {
+        resetVideo();
+
+        var rawUrl = VIDEOS[currentIndex];
+        var encodedUrl = encodeURI(rawUrl);
+
+        setStatus('load start: ' + (reason || 'init'));
+
+        videoEl.muted = true;
+        videoEl.defaultMuted = true;
+        videoEl.autoplay = true;
+        videoEl.controls = true;
+        videoEl.playsInline = true;
+        videoEl.preload = 'auto';
+
+        videoEl.setAttribute('muted', 'true');
+        videoEl.setAttribute('autoplay', 'true');
+        videoEl.setAttribute('playsinline', 'true');
+        videoEl.setAttribute('webkit-playsinline', 'true');
+        videoEl.setAttribute('preload', 'auto');
+
+        loadTimer = setTimeout(function () {
+          setStatus('LOAD_TIMEOUT → next');
+          nextVideo('load_timeout');
+        }, LOAD_TIMEOUT);
+
+        try {
+          videoEl.src = encodedUrl;
+          videoEl.load();
+        } catch (e) {
+          setStatus('load throw: ' + String(e && e.message ? e.message : e));
+          nextVideo('load_throw');
+        }
+
+        playTimer = setTimeout(function () {
+          tryPlay('delayed_1000');
+        }, 1000);
+      }
+
+      function tryPlay(reason) {
+        setStatus('play attempt: ' + reason);
+
+        try {
+          var promise = videoEl.play();
+
+          if (promise && typeof promise.then === 'function') {
+            promise
+              .then(function () {
+                clearTimers();
+                setStatus('playing resolved: ' + reason);
+              })
+              .catch(function (error) {
+                setStatus(
+                  'play promise error: ' +
+                  String(error && error.message ? error.message : error)
+                );
+
+                setTimeout(function () {
+                  nextVideo('play_promise_error');
+                }, 1000);
+              });
+          } else {
+            clearTimers();
+            setStatus('playing no promise: ' + reason);
+          }
+        } catch (e) {
+          setStatus('play throw: ' + String(e && e.message ? e.message : e));
+
+          setTimeout(function () {
+            nextVideo('play_throw');
+          }, 1000);
+        }
+      }
+
+      function nextVideo(reason) {
+        clearTimers();
+
+        currentIndex += 1;
+
+        if (currentIndex >= VIDEOS.length) {
+          currentIndex = 0;
+        }
+
+        setStatus('next: ' + reason);
+
+        setTimeout(function () {
+          playCurrent(reason);
+        }, 500);
+      }
+
+      videoEl.onloadedmetadata = function () {
+        setStatus('loadedmetadata');
+        tryPlay('loadedmetadata');
+      };
+
+      videoEl.onloadeddata = function () {
+        setStatus('loadeddata');
+      };
+
+      videoEl.oncanplay = function () {
+        setStatus('canplay');
+        tryPlay('canplay');
+      };
+
+      videoEl.onplaying = function () {
+        clearTimers();
+        setStatus('playing event');
+      };
+
+      videoEl.ontimeupdate = function () {
+        if (Math.floor(videoEl.currentTime || 0) % 5 === 0) {
+          setStatus('timeupdate');
+        }
+      };
+
+      videoEl.onwaiting = function () {
+        setStatus('waiting');
+      };
+
+      videoEl.onstalled = function () {
+        setStatus('stalled');
+      };
+
+      videoEl.onerror = function () {
+        clearTimers();
+
+        var code = null;
+
+        try {
+          code = videoEl.error ? videoEl.error.code : null;
+        } catch (e) {}
+
+        setStatus('video error code: ' + code);
+
+        setTimeout(function () {
+          nextVideo('video_error_' + code);
+        }, 1000);
+      };
+
+      videoEl.onended = function () {
+        setStatus('ended');
+        nextVideo('ended');
+      };
+
+      window.addEventListener('keydown', function (e) {
+        if (e.key === 'ArrowRight' || e.keyCode === 39) {
+          nextVideo('manual_next');
+        }
+
+        if (e.key === 'Enter' || e.keyCode === 13) {
+          tryPlay('manual_enter');
+        }
+      });
+
+      setTimeout(function () {
+        var badge = document.getElementById('badge');
+        if (badge) {
+          badge.style.display = 'none';
+        }
+      }, 8000);
+
+      playCurrent('page_loaded');
+    })();
+  </script>
+</body>
+</html>
