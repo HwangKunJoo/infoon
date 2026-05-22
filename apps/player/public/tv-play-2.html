@@ -3,161 +3,118 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Video Only Debug</title>
-
+  <title>Native Video + Image Debug</title>
   <style>
-    * {
-      box-sizing: border-box;
+    * { box-sizing: border-box; }
+    html, body {
+      width: 100%; height: 100%; margin: 0; padding: 0;
+      background: #000; overflow: hidden; font-family: Arial, Helvetica, sans-serif;
     }
-
-    html,
-    body {
-      width: 100%;
-      height: 100%;
-      margin: 0;
-      padding: 0;
-      background: #000;
-      overflow: hidden;
-      font-family: Arial, Helvetica, sans-serif;
+    #stage { position: relative; width: 100vw; height: 100vh; background: #000; overflow: hidden; }
+    #image {
+      position: absolute; inset: 0; width: 100%; height: 100%;
+      object-fit: contain; background: #000; display: none;
     }
-
-    #stage {
-      position: relative;
-      width: 100vw;
-      height: 100vh;
-      background: #000;
-      overflow: hidden;
-    }
-
     video {
-      position: absolute;
-      inset: 0;
-      width: 100%;
-      height: 100%;
-      background: #000;
-      object-fit: contain;
+      position: absolute; inset: 0; width: 100%; height: 100%;
+      background: #000; object-fit: contain; display: none;
     }
-
     #debugPanel {
-      position: fixed;
-      left: 12px;
-      top: 12px;
-      z-index: 9999;
-      width: min(980px, calc(100vw - 24px));
-      max-height: 78vh;
-      overflow: hidden;
-      padding: 12px 14px;
-      border-radius: 8px;
-      background: rgba(0, 0, 0, 0.78);
-      color: #00ff90;
-      font-size: 14px;
-      line-height: 1.45;
-      font-family: Menlo, Monaco, Consolas, monospace;
-      white-space: pre-wrap;
-      word-break: break-word;
-      pointer-events: none;
+      position: fixed; left: 12px; top: 12px; z-index: 9999;
+      width: min(980px, calc(100vw - 24px)); max-height: 78vh; overflow: hidden;
+      padding: 12px 14px; border-radius: 8px; background: rgba(0,0,0,0.78);
+      color: #00ff90; font-size: 14px; line-height: 1.45;
+      font-family: Menlo, Monaco, Consolas, monospace; white-space: pre-wrap;
+      word-break: break-word; pointer-events: none;
     }
-
     #badge {
-      position: fixed;
-      right: 12px;
-      bottom: 12px;
-      z-index: 9999;
-      color: #fff;
-      background: rgba(0, 0, 0, 0.65);
-      font-size: 14px;
-      padding: 6px 10px;
-      border-radius: 8px;
+      position: fixed; right: 12px; bottom: 12px; z-index: 9999;
+      color: #fff; background: rgba(0,0,0,0.65); font-size: 14px;
+      padding: 6px 10px; border-radius: 8px;
     }
   </style>
 </head>
-
 <body>
   <div id="stage">
-    <video
-      id="video"
-      autoplay
-      muted
-      playsinline
-      webkit-playsinline
-      preload="auto"
-      controls
-    ></video>
-
+    <img id="image" alt="" />
+    <video id="video" autoplay muted playsinline webkit-playsinline preload="auto" controls></video>
     <div id="debugPanel">loading...</div>
-    <div id="badge">tv-play-2 / safe-url-debug</div>
+    <div id="badge">tv-play-2 / native-video-adapter-debug</div>
   </div>
 
   <script>
     (function () {
-      var VIDEOS = [
-        'https://s3.ap-northeast-2.amazonaws.com/onldo/digital_contents/13_safe.mp4',
-        'https://s3.ap-northeast-2.amazonaws.com/onldo/digital_contents/12_safe.mp4',
-        'https://s3.ap-northeast-2.amazonaws.com/onldo/digital_contents/10_safe.mp4'
+      var ITEMS = [
+        { type: 'image', url: 'https://picsum.photos/id/1018/1920/1080', duration: 5000, title: 'sample image 1' },
+        { type: 'video', url: 'https://s3.ap-northeast-2.amazonaws.com/onldo/digital_contents/13_safe.mp4', title: 'native video 13_safe' },
+        { type: 'image', url: 'https://picsum.photos/id/1025/1920/1080', duration: 5000, title: 'sample image 2' },
+        { type: 'video', url: 'https://s3.ap-northeast-2.amazonaws.com/onldo/digital_contents/12_safe.mp4', title: 'native video 12_safe' },
+        { type: 'image', url: 'https://picsum.photos/id/1039/1920/1080', duration: 5000, title: 'sample image 3' },
+        { type: 'video', url: 'https://s3.ap-northeast-2.amazonaws.com/onldo/digital_contents/10_safe.mp4', title: 'native video 10_safe' }
       ];
 
+      var imageEl = document.getElementById('image');
       var videoEl = document.getElementById('video');
       var debugPanel = document.getElementById('debugPanel');
 
       var currentIndex = 0;
-      var loadTimer = null;
-      var playTimer = null;
+      var imageTimer = null;
+      var videoFallbackTimer = null;
+      var nativeVideoTimer = null;
       var statusTimer = null;
       var logs = [];
       var isStoppedOnError = false;
+      var currentRequestId = null;
+      var isUsingNativeVideo = false;
 
-      var LOAD_TIMEOUT = 20000;
+      var IMAGE_DURATION = 5000;
+      var NATIVE_VIDEO_START_TIMEOUT = 15000;
+      var NATIVE_VIDEO_END_TIMEOUT = 5 * 60 * 1000;
+      var FALLBACK_VIDEO_LOAD_TIMEOUT = 20000;
 
       function now() {
         var d = new Date();
-
-        return (
-          String(d.getHours()).padStart(2, '0') + ':' +
+        return String(d.getHours()).padStart(2, '0') + ':' +
           String(d.getMinutes()).padStart(2, '0') + ':' +
-          String(d.getSeconds()).padStart(2, '0')
-        );
+          String(d.getSeconds()).padStart(2, '0');
       }
 
-      function getErrorCode() {
-        try {
-          return videoEl.error ? videoEl.error.code : null;
-        } catch (e) {
-          return null;
-        }
+      function currentItem() {
+        return ITEMS[currentIndex] || ITEMS[0];
       }
 
       function getVideoState() {
+        var errorCode = null;
         var duration = 0;
 
-        try {
-          duration = Number(videoEl.duration || 0);
-        } catch (e) {
-          duration = 0;
-        }
+        try { errorCode = videoEl.error ? videoEl.error.code : null; } catch (e) {}
+        try { duration = Number(videoEl.duration || 0); } catch (e) { duration = 0; }
 
         return [
-          'index=' + (currentIndex + 1) + '/' + VIDEOS.length,
-          'readyState=' + videoEl.readyState,
-          'networkState=' + videoEl.networkState,
-          'paused=' + videoEl.paused,
-          'ended=' + videoEl.ended,
-          'currentTime=' + Number(videoEl.currentTime || 0).toFixed(1),
-          'duration=' + duration.toFixed(1),
-          'error=' + getErrorCode()
+          'fallbackReadyState=' + videoEl.readyState,
+          'fallbackNetworkState=' + videoEl.networkState,
+          'fallbackPaused=' + videoEl.paused,
+          'fallbackCurrentTime=' + Number(videoEl.currentTime || 0).toFixed(1),
+          'fallbackDuration=' + duration.toFixed(1),
+          'fallbackError=' + errorCode
         ].join(' | ');
       }
 
       function renderLogs() {
-        var currentUrl = VIDEOS[currentIndex] || '';
+        var item = currentItem();
 
         debugPanel.textContent =
-          'tv-play-2 / safe-url-debug\n' +
+          'tv-play-2 / native-video-adapter-debug\n' +
+          'index=' + (currentIndex + 1) + '/' + ITEMS.length +
+          ' | type=' + item.type +
+          ' | title=' + (item.title || '') +
+          ' | native=' + isUsingNativeVideo +
+          ' | stopped=' + isStoppedOnError + '\n' +
+          'url=' + item.url + '\n' +
           getVideoState() + '\n' +
-          'src=' + currentUrl + '\n' +
-          'control: Enter=play, →=next, ←=prev, R=reload\n' +
-          'stoppedOnError=' + isStoppedOnError + '\n' +
+          'control: Enter=retry/play, →=next, ←=prev, R=reload current\n' +
           '--------------------------------------------------\n' +
-          logs.slice(-18).join('\n');
+          logs.slice(-20).join('\n');
       }
 
       function log(message) {
@@ -166,31 +123,118 @@
       }
 
       function clearTimers() {
-        if (loadTimer) {
-          clearTimeout(loadTimer);
-          loadTimer = null;
-        }
-
-        if (playTimer) {
-          clearTimeout(playTimer);
-          playTimer = null;
-        }
+        if (imageTimer) { clearTimeout(imageTimer); imageTimer = null; }
+        if (videoFallbackTimer) { clearTimeout(videoFallbackTimer); videoFallbackTimer = null; }
+        if (nativeVideoTimer) { clearTimeout(nativeVideoTimer); nativeVideoTimer = null; }
       }
 
-      function resetVideo() {
-        clearTimers();
+      function hideAllMedia() {
+        imageEl.style.display = 'none';
+        videoEl.style.display = 'none';
 
         try {
           videoEl.pause();
-        } catch (e) {}
-
-        try {
           videoEl.removeAttribute('src');
           videoEl.load();
         } catch (e) {}
       }
 
-      function setVideoAttributes() {
+      function postToNative(message) {
+        try {
+          if (window.ReactNativeWebView && typeof window.ReactNativeWebView.postMessage === 'function') {
+            window.ReactNativeWebView.postMessage(JSON.stringify(message));
+            return true;
+          }
+        } catch (e) {
+          log('POST_TO_NATIVE_THROW ' + String(e && e.message ? e.message : e));
+        }
+
+        return false;
+      }
+
+      function playCurrent(reason) {
+        clearTimers();
+        hideAllMedia();
+
+        isStoppedOnError = false;
+        isUsingNativeVideo = false;
+        currentRequestId = Date.now() + '_' + currentIndex;
+
+        var item = currentItem();
+
+        logs = [];
+        log('PLAY_CURRENT reason=' + (reason || 'unknown'));
+        log('ITEM type=' + item.type + ' title=' + (item.title || ''));
+        log('URL=' + item.url);
+
+        if (item.type === 'image') {
+          playImage(item);
+          return;
+        }
+
+        if (item.type === 'video') {
+          playNativeVideo(item);
+          return;
+        }
+
+        log('UNKNOWN_ITEM_TYPE -> next');
+        nextItem('unknown_item_type');
+      }
+
+      function playImage(item) {
+        imageEl.onload = function () {
+          log('IMAGE_LOADED');
+          imageTimer = setTimeout(function () {
+            nextItem('image_duration_end');
+          }, Number(item.duration || IMAGE_DURATION));
+        };
+
+        imageEl.onerror = function () {
+          isStoppedOnError = true;
+          log('IMAGE_ERROR. Press → for next or R to reload.');
+          renderLogs();
+        };
+
+        imageEl.src = item.url;
+        imageEl.style.display = 'block';
+
+        log('IMAGE_LOAD_START');
+        renderLogs();
+      }
+
+      function playNativeVideo(item) {
+        var requestId = currentRequestId;
+
+        isUsingNativeVideo = true;
+
+        var sent = postToNative({
+          type: 'PLAY_NATIVE_VIDEO',
+          url: item.url,
+          currentIndex: currentIndex,
+          requestId: requestId
+        });
+
+        if (!sent) {
+          log('NO_REACT_NATIVE_WEBVIEW -> fallback html video');
+          isUsingNativeVideo = false;
+          playFallbackHtmlVideo(item);
+          return;
+        }
+
+        log('PLAY_NATIVE_VIDEO_SENT requestId=' + requestId);
+
+        nativeVideoTimer = setTimeout(function () {
+          isStoppedOnError = true;
+          log('NATIVE_VIDEO_START_TIMEOUT after ' + NATIVE_VIDEO_START_TIMEOUT + 'ms');
+          log('STOPPED. Press Enter to retry, → for next.');
+          renderLogs();
+        }, NATIVE_VIDEO_START_TIMEOUT);
+
+        renderLogs();
+      }
+
+      function playFallbackHtmlVideo(item) {
+        videoEl.style.display = 'block';
         videoEl.muted = true;
         videoEl.defaultMuted = true;
         videoEl.autoplay = true;
@@ -203,219 +247,177 @@
         videoEl.setAttribute('playsinline', 'true');
         videoEl.setAttribute('webkit-playsinline', 'true');
         videoEl.setAttribute('preload', 'auto');
-      }
 
-      function playCurrent(reason) {
-        isStoppedOnError = false;
-
-        resetVideo();
-        setVideoAttributes();
-
-        var rawUrl = VIDEOS[currentIndex];
-        var encodedUrl = encodeURI(rawUrl);
-
-        log('LOAD_START reason=' + (reason || 'init'));
-        log('URL=' + encodedUrl);
-
-        loadTimer = setTimeout(function () {
-          clearTimers();
-
+        videoFallbackTimer = setTimeout(function () {
           isStoppedOnError = true;
-
-          log('LOAD_TIMEOUT after ' + LOAD_TIMEOUT + 'ms');
-          log('STOPPED. Press Enter to retry, → for next video.');
+          log('FALLBACK_VIDEO_LOAD_TIMEOUT after ' + FALLBACK_VIDEO_LOAD_TIMEOUT + 'ms');
+          log('STOPPED. Press Enter to retry, → for next.');
           renderLogs();
-        }, LOAD_TIMEOUT);
+        }, FALLBACK_VIDEO_LOAD_TIMEOUT);
 
         try {
-          videoEl.src = encodedUrl;
+          videoEl.src = encodeURI(item.url);
           videoEl.load();
-          log('video.load() called');
-        } catch (e) {
-          clearTimers();
+          log('FALLBACK video.load() called');
 
-          isStoppedOnError = true;
-
-          log('LOAD_THROW ' + String(e && e.message ? e.message : e));
-          log('STOPPED. Press Enter to retry, → for next video.');
-          renderLogs();
-          return;
-        }
-
-        playTimer = setTimeout(function () {
-          tryPlay('delayed_1000');
-        }, 1000);
-
-        renderLogs();
-      }
-
-      function tryPlay(reason) {
-        if (isStoppedOnError) {
-          log('PLAY_SKIPPED stoppedOnError=true');
-          return;
-        }
-
-        log('PLAY_ATTEMPT reason=' + reason + ' / ' + getVideoState());
-
-        try {
           var promise = videoEl.play();
 
           if (promise && typeof promise.then === 'function') {
-            promise
-              .then(function () {
-                clearTimers();
-                log('PLAY_RESOLVED reason=' + reason + ' / ' + getVideoState());
-              })
-              .catch(function (error) {
-                clearTimers();
-
-                isStoppedOnError = true;
-
-                log(
-                  'PLAY_PROMISE_ERROR reason=' + reason +
-                  ' message=' + String(error && error.message ? error.message : error)
-                );
-                log('STOPPED. Press Enter to retry, → for next video.');
-                renderLogs();
-              });
-          } else {
-            clearTimers();
-            log('PLAY_NO_PROMISE reason=' + reason + ' / ' + getVideoState());
+            promise.then(function () {
+              clearTimers();
+              log('FALLBACK_PLAY_RESOLVED');
+            }).catch(function (error) {
+              isStoppedOnError = true;
+              clearTimers();
+              log('FALLBACK_PLAY_PROMISE_ERROR ' + String(error && error.message ? error.message : error));
+              log('STOPPED. Press Enter to retry, → for next.');
+              renderLogs();
+            });
           }
         } catch (e) {
-          clearTimers();
-
           isStoppedOnError = true;
-
-          log(
-            'PLAY_THROW reason=' + reason +
-            ' message=' + String(e && e.message ? e.message : e)
-          );
-          log('STOPPED. Press Enter to retry, → for next video.');
+          clearTimers();
+          log('FALLBACK_PLAY_THROW ' + String(e && e.message ? e.message : e));
+          log('STOPPED. Press Enter to retry, → for next.');
           renderLogs();
         }
       }
 
-      function nextVideo(reason) {
-        clearTimers();
+      function handleNativeMessage(rawData) {
+        var data = rawData;
 
-        currentIndex += 1;
-
-        if (currentIndex >= VIDEOS.length) {
-          currentIndex = 0;
+        try {
+          if (typeof rawData === 'string') {
+            data = JSON.parse(rawData);
+          }
+        } catch (e) {
+          log('NATIVE_MESSAGE_PARSE_ERROR raw=' + String(rawData));
+          return;
         }
 
-        logs = [];
-        log('NEXT_VIDEO reason=' + reason);
+        if (!data || typeof data !== 'object') return;
 
-        playCurrent(reason);
+        log('NATIVE_MESSAGE ' + data.type + ' requestId=' + (data.requestId || ''));
+
+        if (data.requestId && currentRequestId && String(data.requestId) !== String(currentRequestId)) {
+          log('IGNORE_OLD_NATIVE_MESSAGE current=' + currentRequestId);
+          return;
+        }
+
+        if (data.type === 'NATIVE_VIDEO_STARTED') {
+          if (nativeVideoTimer) {
+            clearTimeout(nativeVideoTimer);
+            nativeVideoTimer = null;
+          }
+
+          isStoppedOnError = false;
+
+          nativeVideoTimer = setTimeout(function () {
+            isStoppedOnError = true;
+            log('NATIVE_VIDEO_END_TIMEOUT after ' + NATIVE_VIDEO_END_TIMEOUT + 'ms');
+            log('STOPPED. Press → for next.');
+            renderLogs();
+          }, NATIVE_VIDEO_END_TIMEOUT);
+
+          renderLogs();
+          return;
+        }
+
+        if (data.type === 'NATIVE_VIDEO_ENDED') {
+          clearTimers();
+          nextItem('native_video_ended');
+          return;
+        }
+
+        if (data.type === 'NATIVE_VIDEO_ERROR') {
+          clearTimers();
+          isStoppedOnError = true;
+          log('NATIVE_VIDEO_ERROR message=' + String(data.message || ''));
+          log('STOPPED. Press Enter to retry, → for next.');
+          renderLogs();
+          return;
+        }
+
+        if (data.type === 'NATIVE_VIDEO_STOPPED') {
+          clearTimers();
+          log('NATIVE_VIDEO_STOPPED');
+          renderLogs();
+        }
       }
 
-      function prevVideo(reason) {
+      function nextItem(reason) {
         clearTimers();
+        currentIndex += 1;
+        if (currentIndex >= ITEMS.length) currentIndex = 0;
+        playCurrent(reason || 'next');
+      }
 
+      function prevItem(reason) {
+        clearTimers();
         currentIndex -= 1;
-
-        if (currentIndex < 0) {
-          currentIndex = VIDEOS.length - 1;
-        }
-
-        logs = [];
-        log('PREV_VIDEO reason=' + reason);
-
-        playCurrent(reason);
+        if (currentIndex < 0) currentIndex = ITEMS.length - 1;
+        playCurrent(reason || 'prev');
       }
 
       function reloadCurrent(reason) {
         clearTimers();
-
-        logs = [];
-        log('RELOAD_CURRENT reason=' + reason);
-
-        playCurrent(reason);
+        playCurrent(reason || 'reload');
       }
 
       videoEl.onloadedmetadata = function () {
-        log('EVENT loadedmetadata / ' + getVideoState());
-        tryPlay('loadedmetadata');
-      };
-
-      videoEl.onloadeddata = function () {
-        log('EVENT loadeddata / ' + getVideoState());
+        log('FALLBACK_EVENT loadedmetadata / ' + getVideoState());
       };
 
       videoEl.oncanplay = function () {
-        log('EVENT canplay / ' + getVideoState());
-        tryPlay('canplay');
+        log('FALLBACK_EVENT canplay / ' + getVideoState());
       };
 
       videoEl.onplaying = function () {
         clearTimers();
-        isStoppedOnError = false;
-
-        log('EVENT playing / ' + getVideoState());
-      };
-
-      videoEl.onpause = function () {
-        log('EVENT pause / ' + getVideoState());
-      };
-
-      videoEl.onwaiting = function () {
-        log('EVENT waiting / ' + getVideoState());
-      };
-
-      videoEl.onstalled = function () {
-        log('EVENT stalled / ' + getVideoState());
-      };
-
-      videoEl.onsuspend = function () {
-        log('EVENT suspend / ' + getVideoState());
-      };
-
-      videoEl.onabort = function () {
-        log('EVENT abort / ' + getVideoState());
-      };
-
-      videoEl.onemptied = function () {
-        log('EVENT emptied / ' + getVideoState());
+        log('FALLBACK_EVENT playing / ' + getVideoState());
       };
 
       videoEl.onerror = function () {
         clearTimers();
-
         isStoppedOnError = true;
+        var code = null;
+        try { code = videoEl.error ? videoEl.error.code : null; } catch (e) {}
 
-        log('EVENT error code=' + getErrorCode() + ' / ' + getVideoState());
-        log('STOPPED. Press Enter to retry, → for next video.');
+        log('FALLBACK_EVENT error code=' + code + ' / ' + getVideoState());
+        log('STOPPED. Press Enter to retry, → for next.');
         renderLogs();
       };
 
       videoEl.onended = function () {
-        log('EVENT ended / ' + getVideoState());
-
-        setTimeout(function () {
-          nextVideo('ended');
-        }, 1000);
+        log('FALLBACK_EVENT ended');
+        nextItem('fallback_video_ended');
       };
 
-      statusTimer = setInterval(function () {
+      videoEl.ontimeupdate = function () {
         renderLogs();
-      }, 1000);
+      };
+
+      window.addEventListener('message', function (event) {
+        handleNativeMessage(event.data);
+      });
+
+      document.addEventListener('message', function (event) {
+        handleNativeMessage(event.data);
+      });
 
       window.addEventListener('keydown', function (e) {
         if (e.key === 'ArrowRight' || e.keyCode === 39) {
-          nextVideo('manual_next');
+          nextItem('manual_next');
           return;
         }
 
         if (e.key === 'ArrowLeft' || e.keyCode === 37) {
-          prevVideo('manual_prev');
+          prevItem('manual_prev');
           return;
         }
 
         if (e.key === 'Enter' || e.keyCode === 13) {
-          isStoppedOnError = false;
-          tryPlay('manual_enter');
+          reloadCurrent('manual_enter_retry');
           return;
         }
 
@@ -444,6 +446,10 @@
 
         return true;
       };
+
+      statusTimer = setInterval(function () {
+        renderLogs();
+      }, 1000);
 
       log('PAGE_LOADED userAgent=' + navigator.userAgent);
       playCurrent('page_loaded');
