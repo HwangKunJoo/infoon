@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Video Test</title>
+  <title>Video Only Test</title>
 
   <style>
     * {
@@ -38,9 +38,29 @@
       object-fit: contain;
     }
 
-    #badge {
+    #debugPanel {
       position: fixed;
       left: 12px;
+      top: 12px;
+      z-index: 9999;
+      width: min(900px, calc(100vw - 24px));
+      max-height: 70vh;
+      overflow: hidden;
+      padding: 10px 12px;
+      border-radius: 8px;
+      background: rgba(0, 0, 0, 0.72);
+      color: #00ff90;
+      font-size: 13px;
+      line-height: 1.45;
+      font-family: Menlo, Monaco, Consolas, monospace;
+      white-space: pre-wrap;
+      word-break: break-word;
+      pointer-events: none;
+    }
+
+    #badge {
+      position: fixed;
+      right: 12px;
       bottom: 12px;
       z-index: 9999;
       color: #fff;
@@ -48,21 +68,6 @@
       font-size: 14px;
       padding: 6px 10px;
       border-radius: 8px;
-    }
-
-    #status {
-      position: fixed;
-      left: 12px;
-      top: 12px;
-      z-index: 9999;
-      color: #fff;
-      background: rgba(0, 0, 0, 0.65);
-      font-size: 14px;
-      line-height: 1.5;
-      padding: 8px 10px;
-      border-radius: 8px;
-      max-width: 80vw;
-      word-break: break-all;
     }
   </style>
 </head>
@@ -79,37 +84,72 @@
       controls
     ></video>
 
-    <div id="status">init</div>
-    <div id="badge">tv-play-2 / video-only-test</div>
+    <div id="debugPanel">loading...</div>
+    <div id="badge">tv-play-2 / video-only-debug</div>
   </div>
 
   <script>
     (function () {
       var VIDEOS = [
-        'https://s3.ap-northeast-2.amazonaws.com/onldo/digital_contents/5월3주차_고등_가로 (1).mp4',
-        'https://s3.ap-northeast-2.amazonaws.com/onldo/digital_contents/5월3주차_고등_가로 (3).mp4',
-        'https://s3.ap-northeast-2.amazonaws.com/onldo/digital_contents/5월3주차_고등_가로 (4).mp4'
+        'https://s3.ap-northeast-2.amazonaws.com/onldo/digital_contents/5월2주차_고등_가로 (1)_safe.mp4',
+        'https://s3.ap-northeast-2.amazonaws.com/onldo/digital_contents/5월2주차_고등_가로 (3)_safe.mp4',
+        'https://s3.ap-northeast-2.amazonaws.com/onldo/digital_contents/5월2주차_고등_가로 (4)_safe.mp4'
       ];
 
       var videoEl = document.getElementById('video');
-      var statusEl = document.getElementById('status');
+      var debugPanel = document.getElementById('debugPanel');
 
       var currentIndex = 0;
       var loadTimer = null;
       var playTimer = null;
+      var heartbeatTimer = null;
+      var logs = [];
 
       var LOAD_TIMEOUT = 20000;
 
-      function setStatus(message) {
-        var url = VIDEOS[currentIndex] || '';
+      function now() {
+        var d = new Date();
 
-        statusEl.innerHTML =
-          'status: ' + message +
-          '<br>index: ' + (currentIndex + 1) + ' / ' + VIDEOS.length +
-          '<br>readyState: ' + videoEl.readyState +
-          '<br>networkState: ' + videoEl.networkState +
-          '<br>currentTime: ' + Math.floor(videoEl.currentTime || 0) +
-          '<br>src: ' + url;
+        return (
+          String(d.getHours()).padStart(2, '0') + ':' +
+          String(d.getMinutes()).padStart(2, '0') + ':' +
+          String(d.getSeconds()).padStart(2, '0')
+        );
+      }
+
+      function getVideoState() {
+        var errorCode = null;
+
+        try {
+          errorCode = videoEl.error ? videoEl.error.code : null;
+        } catch (e) {}
+
+        return [
+          'index=' + (currentIndex + 1) + '/' + VIDEOS.length,
+          'readyState=' + videoEl.readyState,
+          'networkState=' + videoEl.networkState,
+          'paused=' + videoEl.paused,
+          'ended=' + videoEl.ended,
+          'currentTime=' + Number(videoEl.currentTime || 0).toFixed(1),
+          'duration=' + Number(videoEl.duration || 0).toFixed(1),
+          'error=' + errorCode
+        ].join(' | ');
+      }
+
+      function renderLogs() {
+        var currentUrl = VIDEOS[currentIndex] || '';
+
+        debugPanel.textContent =
+          'tv-play-2 / video-only-debug\n' +
+          getVideoState() + '\n' +
+          'src=' + currentUrl + '\n' +
+          '----------------------------------------\n' +
+          logs.slice(-30).join('\n');
+      }
+
+      function log(message) {
+        logs.push('[' + now() + '] ' + message);
+        renderLogs();
       }
 
       function clearTimers() {
@@ -137,14 +177,7 @@
         } catch (e) {}
       }
 
-      function playCurrent(reason) {
-        resetVideo();
-
-        var rawUrl = VIDEOS[currentIndex];
-        var encodedUrl = encodeURI(rawUrl);
-
-        setStatus('load start: ' + (reason || 'init'));
-
+      function setVideoAttributes() {
         videoEl.muted = true;
         videoEl.defaultMuted = true;
         videoEl.autoplay = true;
@@ -157,27 +190,43 @@
         videoEl.setAttribute('playsinline', 'true');
         videoEl.setAttribute('webkit-playsinline', 'true');
         videoEl.setAttribute('preload', 'auto');
+      }
+
+      function playCurrent(reason) {
+        resetVideo();
+        setVideoAttributes();
+
+        var rawUrl = VIDEOS[currentIndex];
+        var encodedUrl = encodeURI(rawUrl);
+
+        log('LOAD_START reason=' + (reason || 'init'));
+        log('RAW_URL=' + rawUrl);
+        log('ENCODED_URL=' + encodedUrl);
 
         loadTimer = setTimeout(function () {
-          setStatus('LOAD_TIMEOUT → next');
+          log('LOAD_TIMEOUT after ' + LOAD_TIMEOUT + 'ms / ' + getVideoState());
           nextVideo('load_timeout');
         }, LOAD_TIMEOUT);
 
         try {
           videoEl.src = encodedUrl;
           videoEl.load();
+          log('video.load() called');
         } catch (e) {
-          setStatus('load throw: ' + String(e && e.message ? e.message : e));
+          log('LOAD_THROW ' + String(e && e.message ? e.message : e));
           nextVideo('load_throw');
+          return;
         }
 
         playTimer = setTimeout(function () {
           tryPlay('delayed_1000');
         }, 1000);
+
+        renderLogs();
       }
 
       function tryPlay(reason) {
-        setStatus('play attempt: ' + reason);
+        log('PLAY_ATTEMPT reason=' + reason + ' / ' + getVideoState());
 
         try {
           var promise = videoEl.play();
@@ -186,12 +235,13 @@
             promise
               .then(function () {
                 clearTimers();
-                setStatus('playing resolved: ' + reason);
+                log('PLAY_RESOLVED reason=' + reason + ' / ' + getVideoState());
               })
               .catch(function (error) {
-                setStatus(
-                  'play promise error: ' +
-                  String(error && error.message ? error.message : error)
+                log(
+                  'PLAY_PROMISE_ERROR reason=' + reason +
+                  ' message=' + String(error && error.message ? error.message : error) +
+                  ' / ' + getVideoState()
                 );
 
                 setTimeout(function () {
@@ -200,10 +250,14 @@
               });
           } else {
             clearTimers();
-            setStatus('playing no promise: ' + reason);
+            log('PLAY_NO_PROMISE reason=' + reason + ' / ' + getVideoState());
           }
         } catch (e) {
-          setStatus('play throw: ' + String(e && e.message ? e.message : e));
+          log(
+            'PLAY_THROW reason=' + reason +
+            ' message=' + String(e && e.message ? e.message : e) +
+            ' / ' + getVideoState()
+          );
 
           setTimeout(function () {
             nextVideo('play_throw');
@@ -214,13 +268,13 @@
       function nextVideo(reason) {
         clearTimers();
 
+        log('NEXT_VIDEO reason=' + reason);
+
         currentIndex += 1;
 
         if (currentIndex >= VIDEOS.length) {
           currentIndex = 0;
         }
-
-        setStatus('next: ' + reason);
 
         setTimeout(function () {
           playCurrent(reason);
@@ -228,48 +282,56 @@
       }
 
       videoEl.onloadedmetadata = function () {
-        setStatus('loadedmetadata');
+        log('EVENT loadedmetadata / ' + getVideoState());
         tryPlay('loadedmetadata');
       };
 
       videoEl.onloadeddata = function () {
-        setStatus('loadeddata');
+        log('EVENT loadeddata / ' + getVideoState());
       };
 
       videoEl.oncanplay = function () {
-        setStatus('canplay');
+        log('EVENT canplay / ' + getVideoState());
         tryPlay('canplay');
       };
 
       videoEl.onplaying = function () {
         clearTimers();
-        setStatus('playing event');
+        log('EVENT playing / ' + getVideoState());
       };
 
-      videoEl.ontimeupdate = function () {
-        if (Math.floor(videoEl.currentTime || 0) % 5 === 0) {
-          setStatus('timeupdate');
-        }
+      videoEl.onpause = function () {
+        log('EVENT pause / ' + getVideoState());
       };
 
       videoEl.onwaiting = function () {
-        setStatus('waiting');
+        log('EVENT waiting / ' + getVideoState());
       };
 
       videoEl.onstalled = function () {
-        setStatus('stalled');
+        log('EVENT stalled / ' + getVideoState());
+      };
+
+      videoEl.onsuspend = function () {
+        log('EVENT suspend / ' + getVideoState());
+      };
+
+      videoEl.onabort = function () {
+        log('EVENT abort / ' + getVideoState());
+      };
+
+      videoEl.onemptied = function () {
+        log('EVENT emptied / ' + getVideoState());
       };
 
       videoEl.onerror = function () {
-        clearTimers();
-
         var code = null;
 
         try {
           code = videoEl.error ? videoEl.error.code : null;
         } catch (e) {}
 
-        setStatus('video error code: ' + code);
+        log('EVENT error code=' + code + ' / ' + getVideoState());
 
         setTimeout(function () {
           nextVideo('video_error_' + code);
@@ -277,9 +339,17 @@
       };
 
       videoEl.onended = function () {
-        setStatus('ended');
+        log('EVENT ended / ' + getVideoState());
         nextVideo('ended');
       };
+
+      videoEl.ontimeupdate = function () {
+        renderLogs();
+      };
+
+      heartbeatTimer = setInterval(function () {
+        renderLogs();
+      }, 1000);
 
       window.addEventListener('keydown', function (e) {
         if (e.key === 'ArrowRight' || e.keyCode === 39) {
@@ -291,13 +361,27 @@
         }
       });
 
-      setTimeout(function () {
-        var badge = document.getElementById('badge');
-        if (badge) {
-          badge.style.display = 'none';
-        }
-      }, 8000);
+      window.onerror = function (message, source, lineno, colno, error) {
+        log(
+          'WINDOW_ERROR message=' + String(message) +
+          ' line=' + lineno +
+          ' col=' + colno +
+          ' error=' + String(error && error.message ? error.message : error)
+        );
 
+        return true;
+      };
+
+      window.onunhandledrejection = function (event) {
+        log(
+          'UNHANDLED_REJECTION ' +
+          String(event && event.reason && event.reason.message ? event.reason.message : event && event.reason)
+        );
+
+        return true;
+      };
+
+      log('PAGE_LOADED userAgent=' + navigator.userAgent);
       playCurrent('page_loaded');
     })();
   </script>
