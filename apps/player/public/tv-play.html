@@ -103,6 +103,21 @@
 
 <body>
   <div id="stage">
+    <div id="versionBadge" style="
+      position: fixed;
+      left: 12px;
+      bottom: 12px;
+      z-index: 9999;
+      color: #fff;
+      background: rgba(0,0,0,0.55);
+      font-size: 14px;
+      padding: 6px 10px;
+      border-radius: 8px;
+      font-family: Arial, Helvetica, sans-serif;
+    ">
+      Campusmentor-1
+    </div>
+
     <video id="video" autoplay muted playsinline webkit-playsinline preload="auto"></video>
     <img id="image" alt="" />
 
@@ -123,14 +138,14 @@
       var PUSHER_CLUSTER = 'ap3';
       var PUSHER_EVENT = 'refresh';
 
-      var PLAYER_VERSION = '20260521-video-reset-1';
+      var PLAYER_VERSION = 'Campusmentor-1';
 
       var IMAGE_DURATION_SECONDS = 15;
       var SINGLE_VIDEO_REPLAY_LIMIT = 20;
 
       var HEARTBEAT_INTERVAL = 15000;
       var VIDEO_LOAD_TIMEOUT = 12000;
-      var VIDEO_STALL_TIMEOUT = 8000;
+      var VIDEO_STALL_TIMEOUT = 12000;
       var IMAGE_LOAD_TIMEOUT = 3000;
       var REQUEST_TIMEOUT = 20000;
 
@@ -160,6 +175,7 @@
       var singleVideoReplayCount = 0;
       var currentContentUrl = '';
       var currentContentType = '';
+      var playSessionId = 0;
 
       function safeGet(key) {
         try { return localStorage.getItem(key); } catch (e) { return null; }
@@ -351,40 +367,78 @@
         } catch (e) {}
       }
 
-      function resetVideoElement() {
+      function disposeVideoElement(el) {
+        if (!el) return;
+
         try {
-          videoEl.pause();
+          el.pause();
         } catch (e) {}
 
         try {
-          videoEl.removeAttribute('src');
-          videoEl.load();
+          el.removeAttribute('src');
+          el.load();
+        } catch (e) {}
+
+        try {
+          el.onloadedmetadata = null;
+          el.oncanplay = null;
+          el.onplaying = null;
+          el.onloadeddata = null;
+          el.onended = null;
+          el.onerror = null;
+          el.onwaiting = null;
+          el.onstalled = null;
+          el.onabort = null;
+          el.onsuspend = null;
+          el.ontimeupdate = null;
+        } catch (e) {}
+
+        try {
+          if (el.parentNode) {
+            el.parentNode.removeChild(el);
+          }
         } catch (e) {}
       }
 
-      function detachVideoEvents() {
-        videoEl.onloadedmetadata = null;
-        videoEl.oncanplay = null;
-        videoEl.onplaying = null;
-        videoEl.onloadeddata = null;
-        videoEl.onended = null;
-        videoEl.onerror = null;
-        videoEl.onwaiting = null;
-        videoEl.onstalled = null;
-        videoEl.onabort = null;
-        videoEl.onsuspend = null;
-        videoEl.ontimeupdate = null;
+      function createVideoElement() {
+        var el = document.createElement('video');
+
+        el.autoplay = true;
+        el.muted = true;
+        el.defaultMuted = true;
+        el.controls = false;
+        el.playsInline = true;
+        el.preload = 'auto';
+
+        el.setAttribute('autoplay', 'true');
+        el.setAttribute('muted', 'true');
+        el.setAttribute('playsinline', 'true');
+        el.setAttribute('webkit-playsinline', 'true');
+        el.setAttribute('preload', 'auto');
+
+        el.style.display = 'block';
+        el.style.opacity = '0';
+        el.style.zIndex = '2';
+
+        document.getElementById('stage').appendChild(el);
+
+        return el;
+      }
+
+      function resetActiveVideoElement() {
+        disposeVideoElement(videoEl);
+        videoEl = createVideoElement();
       }
 
       function hidePlayers() {
+        playSessionId += 1;
+
         clearTimer('image');
         clearTimer('videoLoad');
         clearTimer('videoStall');
         clearTimer('imageLoad');
 
-        resetVideoElement();
-
-        hideElement(videoEl);
+        resetActiveVideoElement();
         hideElement(imageEl);
       }
 
@@ -616,6 +670,7 @@
           return;
         }
 
+        playSessionId += 1;
         isRefreshing = true;
         showLoading(true);
 
@@ -697,40 +752,16 @@
         }
       }
 
-      function moveNextWithLog(eventType, level, message, payload) {
-        sendLog(eventType, level, message, payload);
-        playNext();
-      }
-
       function playVideo(url) {
+        playSessionId += 1;
+
+        var sessionId = playSessionId;
+        var nextVideoEl = createVideoElement();
+
         clearTimer('image');
         clearTimer('videoLoad');
         clearTimer('videoStall');
         clearTimer('imageLoad');
-
-        clearImageSource();
-        hideElement(imageEl);
-
-        detachVideoEvents();
-        resetVideoElement();
-
-        videoEl.className = videoEl.className
-          .replace(/\bshow\b/g, '')
-          .replace(/\s+/g, ' ');
-        videoEl.style.display = 'none';
-
-        videoEl.muted = true;
-        videoEl.defaultMuted = true;
-        videoEl.autoplay = true;
-        videoEl.controls = false;
-        videoEl.playsInline = true;
-        videoEl.preload = 'auto';
-
-        videoEl.setAttribute('muted', 'true');
-        videoEl.setAttribute('autoplay', 'true');
-        videoEl.setAttribute('playsinline', 'true');
-        videoEl.setAttribute('webkit-playsinline', 'true');
-        videoEl.setAttribute('preload', 'auto');
 
         var hasStartedPlay = false;
         var isPlayPending = false;
@@ -738,11 +769,19 @@
         var lastCurrentTime = 0;
         var sameTimeCount = 0;
 
-        sendLog('VIDEO_LOAD_START', 'info', 'video load start', {
-          url: url,
-          currentIndex: currentIndex,
-          playerVersion: PLAYER_VERSION
-        });
+        currentContentUrl = url || '';
+        currentContentType = 'video';
+
+        function isCurrentSession() {
+          return sessionId === playSessionId;
+        }
+
+        function cleanupNextVideo() {
+          if (nextVideoEl) {
+            disposeVideoElement(nextVideoEl);
+            nextVideoEl = null;
+          }
+        }
 
         function moveNextOnce(eventType, level, message, payload) {
           if (hasMovedNext) return;
@@ -752,43 +791,47 @@
           clearTimer('videoLoad');
           clearTimer('videoStall');
 
-          detachVideoEvents();
-          resetVideoElement();
+          cleanupNextVideo();
 
           sendLog(eventType, level, message, payload);
           playNext();
         }
 
-        function markPlaying(reason) {
-          if (hasMovedNext) return;
+        function switchToNextVideo(reason) {
+          if (!isCurrentSession() || hasMovedNext || !nextVideoEl) return;
 
           hasStartedPlay = true;
           isPlayPending = false;
           sameTimeCount = 0;
 
           clearTimer('videoLoad');
-          showElement(videoEl);
 
-          sendLog('VIDEO_PLAYING', 'info', reason || 'video playing', {
-            url: url,
-            currentIndex: currentIndex,
-            currentTime: videoEl.currentTime || 0,
-            readyState: videoEl.readyState,
-            networkState: videoEl.networkState
-          });
+          var previousVideoEl = videoEl;
+
+          videoEl = nextVideoEl;
+          nextVideoEl = null;
+
+          showElement(videoEl);
+          hideElement(imageEl);
+
+          setTimeout(function () {
+            if (previousVideoEl && previousVideoEl !== videoEl) {
+              disposeVideoElement(previousVideoEl);
+            }
+          }, 550);
 
           resetStallTimer(reason || 'playing');
         }
 
         function resetStallTimer(reason) {
-          if (!hasStartedPlay || hasMovedNext) return;
+          if (!hasStartedPlay || hasMovedNext || !isCurrentSession()) return;
 
           clearTimer('videoStall');
 
           videoStallTimer = setTimeout(function () {
             videoStallTimer = null;
 
-            if (!hasStartedPlay || hasMovedNext) return;
+            if (!hasStartedPlay || hasMovedNext || !isCurrentSession()) return;
 
             var currentTime = 0;
 
@@ -812,8 +855,8 @@
                 reason: reason || '',
                 currentTime: currentTime,
                 currentIndex: currentIndex,
-                readyState: videoEl.readyState,
-                networkState: videoEl.networkState
+                readyState: videoEl ? videoEl.readyState : null,
+                networkState: videoEl ? videoEl.networkState : null
               });
               return;
             }
@@ -823,30 +866,37 @@
         }
 
         function startPlay(reason) {
-          if (hasStartedPlay || isPlayPending || hasMovedNext) return;
+          if (
+            hasStartedPlay ||
+            isPlayPending ||
+            hasMovedNext ||
+            !isCurrentSession() ||
+            !nextVideoEl
+          ) {
+            return;
+          }
 
           isPlayPending = true;
-          showElement(videoEl);
 
           sendLog('VIDEO_PLAY_ATTEMPT', 'info', reason || 'play attempt', {
             url: url,
             currentIndex: currentIndex,
-            readyState: videoEl.readyState,
-            networkState: videoEl.networkState
+            readyState: nextVideoEl ? nextVideoEl.readyState : null,
+            networkState: nextVideoEl ? nextVideoEl.networkState : null
           });
 
           try {
-            var playPromise = videoEl.play();
+            var playPromise = nextVideoEl.play();
 
             if (playPromise && typeof playPromise.then === 'function') {
               playPromise
                 .then(function () {
-                  markPlaying(reason || 'play_resolved');
+                  switchToNextVideo(reason || 'play_resolved');
                 })
                 .catch(function (error) {
                   isPlayPending = false;
 
-                  if (hasMovedNext) return;
+                  if (hasMovedNext || !isCurrentSession()) return;
 
                   var errorMessage = serializeError(error);
 
@@ -863,12 +913,12 @@
                     url: url,
                     currentIndex: currentIndex,
                     reason: reason || '',
-                    readyState: videoEl.readyState,
-                    networkState: videoEl.networkState
+                    readyState: nextVideoEl ? nextVideoEl.readyState : null,
+                    networkState: nextVideoEl ? nextVideoEl.networkState : null
                   });
                 });
             } else {
-              markPlaying(reason || 'play_no_promise');
+              switchToNextVideo(reason || 'play_no_promise');
             }
           } catch (e) {
             isPlayPending = false;
@@ -878,69 +928,73 @@
               url: url,
               currentIndex: currentIndex,
               reason: reason || '',
-              readyState: videoEl.readyState,
-              networkState: videoEl.networkState
+              readyState: nextVideoEl ? nextVideoEl.readyState : null,
+              networkState: nextVideoEl ? nextVideoEl.networkState : null
             });
           }
         }
 
+        sendLog('VIDEO_LOAD_START', 'info', 'video load start', {
+          url: url,
+          currentIndex: currentIndex
+        });
+
         videoLoadTimer = setTimeout(function () {
           videoLoadTimer = null;
 
-          if (!hasStartedPlay && !hasMovedNext) {
+          if (!hasStartedPlay && !hasMovedNext && isCurrentSession()) {
             singleVideoReplayCount = 0;
 
             moveNextOnce('VIDEO_LOAD_TIMEOUT', 'warn', 'video load timeout', {
               url: url,
               currentIndex: currentIndex,
-              readyState: videoEl.readyState,
-              networkState: videoEl.networkState
+              readyState: nextVideoEl ? nextVideoEl.readyState : null,
+              networkState: nextVideoEl ? nextVideoEl.networkState : null
             });
           }
         }, VIDEO_LOAD_TIMEOUT);
 
-        videoEl.onloadedmetadata = function () {
+        nextVideoEl.onloadedmetadata = function () {
           startPlay('loadedmetadata');
         };
 
-        videoEl.onloadeddata = function () {
-          if (hasMovedNext) return;
-          showElement(videoEl);
+        nextVideoEl.onloadeddata = function () {
+          if (hasMovedNext || !isCurrentSession()) return;
           startPlay('loadeddata');
         };
 
-        videoEl.oncanplay = function () {
+        nextVideoEl.oncanplay = function () {
           startPlay('canplay');
         };
 
-        videoEl.onplaying = function () {
-          markPlaying('playing_event');
+        nextVideoEl.onplaying = function () {
+          switchToNextVideo('playing_event');
         };
 
-        videoEl.ontimeupdate = function () {
-          if (hasMovedNext) return;
+        nextVideoEl.ontimeupdate = function () {
+          if (hasMovedNext || !isCurrentSession()) return;
 
-          if (!hasStartedPlay && videoEl.currentTime > 0) {
-            markPlaying('timeupdate');
+          if (!hasStartedPlay && nextVideoEl.currentTime > 0) {
+            switchToNextVideo('timeupdate');
             return;
           }
 
-          lastCurrentTime = Number(videoEl.currentTime || 0);
+          lastCurrentTime = Number((videoEl && videoEl.currentTime) || 0);
         };
 
-        videoEl.onwaiting = function () {
+        nextVideoEl.onwaiting = function () {
           resetStallTimer('waiting');
         };
 
-        videoEl.onstalled = function () {
+        nextVideoEl.onstalled = function () {
           resetStallTimer('stalled');
         };
 
-        videoEl.onabort = function () {};
-        videoEl.onsuspend = function () {};
+        nextVideoEl.onabort = function () {};
+        nextVideoEl.onsuspend = function () {};
 
-        videoEl.onended = function () {
-          if (hasMovedNext) return;
+        nextVideoEl.onended = function () {
+          if (hasMovedNext || !isCurrentSession()) return;
 
           clearTimer('videoLoad');
           clearTimer('videoStall');
@@ -950,21 +1004,7 @@
             singleVideoReplayCount < SINGLE_VIDEO_REPLAY_LIMIT
           ) {
             singleVideoReplayCount += 1;
-
-            try {
-              videoEl.currentTime = 0;
-              isPlayPending = false;
-              hasStartedPlay = false;
-              startPlay('single_video_replay');
-            } catch (e) {
-              singleVideoReplayCount = 0;
-
-              moveNextOnce('VIDEO_REPLAY_THROW_ERROR', 'warn', serializeError(e), {
-                url: url,
-                currentIndex: currentIndex
-              });
-            }
-
+            playVideo(url);
             return;
           }
 
@@ -973,13 +1013,13 @@
           playNext();
         };
 
-        videoEl.onerror = function () {
-          if (hasMovedNext) return;
+        nextVideoEl.onerror = function () {
+          if (hasMovedNext || !isCurrentSession()) return;
 
           var errorCode = null;
 
           try {
-            errorCode = videoEl.error ? videoEl.error.code : null;
+            errorCode = nextVideoEl.error ? nextVideoEl.error.code : null;
           } catch (e) {}
 
           singleVideoReplayCount = 0;
@@ -988,14 +1028,14 @@
             url: url,
             errorCode: errorCode,
             currentIndex: currentIndex,
-            readyState: videoEl.readyState,
-            networkState: videoEl.networkState
+            readyState: nextVideoEl ? nextVideoEl.readyState : null,
+            networkState: nextVideoEl ? nextVideoEl.networkState : null
           });
         };
 
         try {
-          videoEl.src = url;
-          videoEl.load();
+          nextVideoEl.src = url;
+          nextVideoEl.load();
         } catch (e) {
           singleVideoReplayCount = 0;
 
@@ -1008,13 +1048,13 @@
         }
 
         setTimeout(function () {
-          if (!hasMovedNext && !hasStartedPlay && !isPlayPending) {
+          if (!hasMovedNext && !hasStartedPlay && !isPlayPending && isCurrentSession()) {
             startPlay('delayed_start_500');
           }
         }, 500);
 
         setTimeout(function () {
-          if (!hasMovedNext && !hasStartedPlay && !isPlayPending) {
+          if (!hasMovedNext && !hasStartedPlay && !isPlayPending && isCurrentSession()) {
             startPlay('delayed_start_2500');
           }
         }, 2500);
@@ -1044,40 +1084,62 @@
       }
 
       function playImage(url, duration) {
+        playSessionId += 1;
+
+        var sessionId = playSessionId;
+        var previousVideoEl = videoEl;
+
         clearTimer('image');
         clearTimer('imageLoad');
         clearTimer('videoLoad');
         clearTimer('videoStall');
 
-        detachVideoEvents();
-        resetVideoElement();
-
-        hideElement(videoEl);
-
         preloadImage(url)
           .then(function () {
+            if (sessionId !== playSessionId) return;
+
+            currentContentUrl = url || '';
+            currentContentType = 'image';
+
             imageEl.onload = function () {};
 
             imageEl.onerror = function () {
-              moveNextWithLog('IMAGE_ELEMENT_ERROR', 'error', 'image element error', {
+              if (sessionId !== playSessionId) return;
+
+              sendLog('IMAGE_ELEMENT_ERROR', 'error', 'image element error', {
                 url: url,
                 currentIndex: currentIndex
               });
+              playNext();
             };
 
             imageEl.src = url;
 
             showElement(imageEl);
 
+            setTimeout(function () {
+              if (sessionId !== playSessionId) return;
+
+              if (previousVideoEl && previousVideoEl !== videoEl) {
+                disposeVideoElement(previousVideoEl);
+              } else if (previousVideoEl === videoEl) {
+                resetActiveVideoElement();
+              }
+            }, 550);
+
             imageTimer = setTimeout(function () {
+              if (sessionId !== playSessionId) return;
               playNext();
             }, Math.max(1, duration) * 1000);
           })
           .catch(function (error) {
-            moveNextWithLog('IMAGE_PRELOAD_ERROR', 'error', serializeError(error), {
+            if (sessionId !== playSessionId) return;
+
+            sendLog('IMAGE_PRELOAD_ERROR', 'error', serializeError(error), {
               url: url,
               currentIndex: currentIndex
             });
+            playNext();
           });
       }
 
@@ -1241,8 +1303,7 @@
         clearTimer('videoStall');
         clearTimer('imageLoad');
 
-        detachVideoEvents();
-        resetVideoElement();
+        disposeVideoElement(videoEl);
 
         try {
           if (pusherInstance) {
@@ -1250,6 +1311,13 @@
           }
         } catch (e) {}
       };
+
+      setTimeout(function () {
+        var badge = document.getElementById('versionBadge');
+        if (badge) {
+          badge.style.display = 'none';
+        }
+      }, 5000);
 
       init();
     })();
