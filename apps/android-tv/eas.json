@@ -31,6 +31,14 @@
       "android": {
         "buildType": "apk"
       }
+    },
+     "release": {
+      "autoIncrement": true,
+      "channel": "release",
+      "environment": "production",
+      "android": {
+        "buildType": "apk"
+      }
     }
   },
 

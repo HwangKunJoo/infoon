@@ -18,7 +18,7 @@
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "permissions": ["INTERNET"],
-      "runtimeVersion": "1.0.0"
+      "runtimeVersion": "1.1.0"
     },
     "plugins": [
       "expo-router",
