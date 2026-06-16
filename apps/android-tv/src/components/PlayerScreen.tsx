@@ -5,6 +5,7 @@ import { useVideoPlayer, VideoView } from "expo-video";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Animated,
   Dimensions,
   Image,
   NativeModules,
@@ -88,7 +89,11 @@ type CurrentStatusPayload = {
 };
 
 const IMAGE_DURATION_SECONDS = 15;
-const VIDEO_START_TIMEOUT = 15000;
+const IMAGE_PREFETCH_TIMEOUT = 4000;
+const VIDEO_START_TIMEOUT = 10000;
+const TRANSITION_LOCK_TIMEOUT = 12000;
+const IMAGE_STUCK_TIMEOUT = 45000;
+const DISPLAY_WATCHDOG_INTERVAL = 10000;
 const ERROR_RETRY_DELAY = 30000;
 const NEXT_DELAY = 300;
 
@@ -154,6 +159,26 @@ function getErrorMessage(error: unknown) {
   } catch {
     return String(error);
   }
+}
+
+function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  timeoutMessage: string,
+): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+  const timeoutPromise = new Promise<T>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error(timeoutMessage));
+    }, timeoutMs);
+  });
+
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+  });
 }
 
 function makeRequestId() {
@@ -412,9 +437,11 @@ function normalizeNativeCommand(eventName: string, eventData: unknown) {
 
 export function PlayerScreen({ token, deviceId, onLogout }: PlayerScreenProps) {
   const [status, setStatus] = useState<PlayerStatus>("loading");
-  const [contents, setContents] = useState<ContentItem[]>([]);
+  const [, setContents] = useState<ContentItem[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [currentImageUrl, setCurrentImageUrl] = useState("");
+  const [, setCurrentImageUrl] = useState("");
+  const [backImageUrl, setBackImageUrl] = useState("");
+  const [frontImageUrl, setFrontImageUrl] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [pusherConnected, setPusherConnected] = useState(false);
   const [videoVisible, setVideoVisible] = useState(false);
@@ -425,6 +452,27 @@ export function PlayerScreen({ token, deviceId, onLogout }: PlayerScreenProps) {
   const videoStartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const nextTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const playSeqRef = useRef(0);
+  const currentImageUrlRef = useRef("");
+  const frontImageOpacityRef = useRef(new Animated.Value(0));
+  const pendingImageRef = useRef<{
+    seq: number;
+    url: string;
+    durationMs: number;
+  } | null>(null);
+  const pendingImageFallbackTimerRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
+  const videoVisibleRef = useRef(false);
+  const activeContentTypeRef = useRef<"image" | "video" | null>(null);
+  const isPreparingVideoRef = useRef(false);
+  const activeVideoSeqRef = useRef(0);
+  const preparingVideoSeqRef = useRef(0);
+  const isTransitioningRef = useRef(false);
+  const transitionLockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const lastDisplayChangedAtRef = useRef(Date.now());
+  const currentImageDurationMsRef = useRef(IMAGE_DURATION_SECONDS * 1000);
 
   const pusherRef = useRef<Pusher | null>(null);
   const pusherChannelNamesRef = useRef<string[]>([]);
@@ -485,6 +533,42 @@ export function PlayerScreen({ token, deviceId, onLogout }: PlayerScreenProps) {
     player.timeUpdateEventInterval = 1;
   });
 
+  const markDisplayChanged = useCallback(() => {
+    lastDisplayChangedAtRef.current = Date.now();
+  }, []);
+
+  const unlockTransition = useCallback(() => {
+    isTransitioningRef.current = false;
+
+    if (transitionLockTimerRef.current) {
+      clearTimeout(transitionLockTimerRef.current);
+      transitionLockTimerRef.current = null;
+    }
+  }, []);
+
+  const lockTransition = useCallback(
+    (reason?: string) => {
+      if (isTransitioningRef.current) {
+        console.log("[PLAYER] transition already in progress. skip:", reason);
+        return false;
+      }
+
+      isTransitioningRef.current = true;
+
+      if (transitionLockTimerRef.current) {
+        clearTimeout(transitionLockTimerRef.current);
+      }
+
+      transitionLockTimerRef.current = setTimeout(() => {
+        console.log("[PLAYER] transition lock timeout. force unlock:", reason);
+        unlockTransition();
+      }, TRANSITION_LOCK_TIMEOUT);
+
+      return true;
+    },
+    [unlockTransition],
+  );
+
   const clearTimers = useCallback(() => {
     if (imageTimerRef.current) {
       clearTimeout(imageTimerRef.current);
@@ -500,9 +584,56 @@ export function PlayerScreen({ token, deviceId, onLogout }: PlayerScreenProps) {
       clearTimeout(nextTimerRef.current);
       nextTimerRef.current = null;
     }
+
+    if (pendingImageFallbackTimerRef.current) {
+      clearTimeout(pendingImageFallbackTimerRef.current);
+      pendingImageFallbackTimerRef.current = null;
+    }
   }, []);
 
+  const setImageUrlSafely = useCallback(
+    (url: string) => {
+      currentImageUrlRef.current = url;
+      setCurrentImageUrl(url);
+
+      if (!url) {
+        pendingImageRef.current = null;
+
+        if (pendingImageFallbackTimerRef.current) {
+          clearTimeout(pendingImageFallbackTimerRef.current);
+          pendingImageFallbackTimerRef.current = null;
+        }
+
+        frontImageOpacityRef.current.stopAnimation();
+        frontImageOpacityRef.current.setValue(0);
+        setBackImageUrl("");
+        setFrontImageUrl("");
+      }
+
+      if (url) {
+        markDisplayChanged();
+      }
+    },
+    [markDisplayChanged],
+  );
+
+  const setVideoVisibleSafely = useCallback(
+    (visible: boolean) => {
+      videoVisibleRef.current = visible;
+      setVideoVisible(visible);
+
+      if (visible) {
+        markDisplayChanged();
+      }
+    },
+    [markDisplayChanged],
+  );
+
   const clearVideo = useCallback(() => {
+    isPreparingVideoRef.current = false;
+    preparingVideoSeqRef.current = 0;
+    activeVideoSeqRef.current = 0;
+    videoVisibleRef.current = false;
     setVideoVisible(false);
 
     try {
@@ -518,76 +649,430 @@ export function PlayerScreen({ token, deviceId, onLogout }: PlayerScreenProps) {
     }
   }, [player]);
 
+  const findNextImageIndex = useCallback((fromIndex: number) => {
+    const list = contentsRef.current;
+
+    if (!list.length) return null;
+
+    let nextIndex = (fromIndex + 1) % list.length;
+
+    for (let i = 0; i < list.length; i += 1) {
+      const item = list[nextIndex];
+
+      if (item?.type === "image" && item.url) {
+        return nextIndex;
+      }
+
+      nextIndex = (nextIndex + 1) % list.length;
+    }
+
+    return null;
+  }, []);
+
+  const scheduleIndexChange = useCallback(
+    (nextIndex: number, reason?: string) => {
+      const list = contentsRef.current;
+
+      if (!list.length) {
+        setImageUrlSafely("");
+        setVideoVisibleSafely(false);
+        setStatus("empty");
+        unlockTransition();
+        return;
+      }
+
+      let safeNextIndex = nextIndex % list.length;
+
+      if (
+        list.length > 1 &&
+        safeNextIndex === currentIndexRef.current &&
+        reason !== "single_content_loop"
+      ) {
+        safeNextIndex = (safeNextIndex + 1) % list.length;
+      }
+
+      nextTimerRef.current = setTimeout(() => {
+        currentIndexRef.current = safeNextIndex;
+        setCurrentIndex(safeNextIndex);
+      }, NEXT_DELAY);
+    },
+    [setImageUrlSafely, setVideoVisibleSafely, unlockTransition],
+  );
+
   const goNext = useCallback(
     (reason?: string) => {
       const list = contentsRef.current;
 
       console.log("[PLAYER] next:", reason);
 
-      setVideoVisible(false);
+      if (!lockTransition(reason)) return;
+
       clearTimers();
-      clearVideo();
 
       if (!list.length) {
-        setCurrentImageUrl("");
+        setImageUrlSafely("");
+        setVideoVisibleSafely(false);
         setStatus("empty");
+        unlockTransition();
         return;
       }
 
       const nextIndex = (currentIndexRef.current + 1) % list.length;
-
-      nextTimerRef.current = setTimeout(() => {
-        currentIndexRef.current = nextIndex;
-        setCurrentIndex(nextIndex);
-      }, NEXT_DELAY);
+      scheduleIndexChange(nextIndex, reason);
     },
-    [clearTimers, clearVideo],
+    [
+      clearTimers,
+      lockTransition,
+      scheduleIndexChange,
+      setImageUrlSafely,
+      setVideoVisibleSafely,
+      unlockTransition,
+    ],
+  );
+
+  const goNextImage = useCallback(
+    (reason?: string) => {
+      const list = contentsRef.current;
+
+      console.log("[PLAYER] next image:", reason);
+
+      if (!lockTransition(reason)) return;
+
+      clearTimers();
+
+      if (!list.length) {
+        setImageUrlSafely("");
+        setVideoVisibleSafely(false);
+        setStatus("empty");
+        unlockTransition();
+        return;
+      }
+
+      const nextImageIndex = findNextImageIndex(currentIndexRef.current);
+
+      if (nextImageIndex === null) {
+        console.log("[PLAYER] next image not found. fallback to next:", reason);
+        scheduleIndexChange((currentIndexRef.current + 1) % list.length, reason);
+        return;
+      }
+
+      scheduleIndexChange(nextImageIndex, reason);
+    },
+    [
+      clearTimers,
+      findNextImageIndex,
+      lockTransition,
+      scheduleIndexChange,
+      setImageUrlSafely,
+      setVideoVisibleSafely,
+      unlockTransition,
+    ],
+  );
+
+  const prefetchImage = useCallback(
+    async (url: string, seq: number, reason: string) => {
+      try {
+        await withTimeout(
+          Image.prefetch(url),
+          IMAGE_PREFETCH_TIMEOUT,
+          "IMAGE_PREFETCH_TIMEOUT",
+        );
+
+        if (playSeqRef.current !== seq) return false;
+
+        return true;
+      } catch (error) {
+        if (playSeqRef.current !== seq) return false;
+
+        const message = getErrorMessage(error);
+
+        console.log("[PLAYER] image prefetch failed:", {
+          reason,
+          url,
+          message,
+        });
+
+        void sendDeviceLog({
+          deviceId,
+          eventType: "IMAGE_PREFETCH_FAILED",
+          level: "warn",
+          message,
+          url,
+          payload: {
+            reason,
+            currentIndex: currentIndexRef.current,
+            contentsLength: contentsRef.current.length,
+          },
+        });
+
+        return false;
+      }
+    },
+    [deviceId],
+  );
+
+  const prefetchNextImage = useCallback(
+    (fromIndex: number, seq: number, reason: string) => {
+      const list = contentsRef.current;
+
+      if (list.length <= 1) return;
+
+      const nextImageIndex = findNextImageIndex(fromIndex);
+
+      if (nextImageIndex === null) return;
+
+      const nextImage = list[nextImageIndex];
+
+      if (!nextImage?.url) return;
+
+      void prefetchImage(nextImage.url, seq, reason);
+    },
+    [findNextImageIndex, prefetchImage],
+  );
+
+  const startImageDurationTimer = useCallback(
+    (durationMs: number, seq: number) => {
+      if (imageTimerRef.current) {
+        clearTimeout(imageTimerRef.current);
+        imageTimerRef.current = null;
+      }
+
+      imageTimerRef.current = setTimeout(() => {
+        if (playSeqRef.current !== seq) return;
+        goNext("image_duration_end");
+      }, durationMs);
+    },
+    [goNext],
+  );
+
+  const completeImageTransition = useCallback(
+    (url: string, durationMs: number, seq: number) => {
+      currentImageUrlRef.current = url;
+      setCurrentImageUrl(url);
+      markDisplayChanged();
+
+      setBackImageUrl(url);
+      setFrontImageUrl("");
+      frontImageOpacityRef.current.setValue(0);
+
+      activeContentTypeRef.current = "image";
+      isPreparingVideoRef.current = false;
+      preparingVideoSeqRef.current = 0;
+      activeVideoSeqRef.current = 0;
+
+      setStatus("playing");
+
+      // 영상 → 이미지 전환에서는 VideoView를 먼저 내리면 이미지가 화면에 붙기 전
+      // 한 프레임 검정 화면이 보일 수 있다. 이미지를 먼저 반영하고 다음 프레임에 영상 레이어를 내린다.
+      if (videoVisibleRef.current) {
+        requestAnimationFrame(() => {
+          if (playSeqRef.current !== seq) return;
+
+          setVideoVisibleSafely(false);
+
+          setTimeout(() => {
+            if (playSeqRef.current !== seq) return;
+            clearVideo();
+          }, 120);
+        });
+      } else {
+        setVideoVisibleSafely(false);
+        clearVideo();
+      }
+
+      unlockTransition();
+
+      startImageDurationTimer(durationMs, seq);
+
+      // 현재 이미지가 화면에 올라간 직후, 다음 이미지 1장만 미리 캐시에 올린다.
+      // 전환 시점에 네트워크/디코딩 작업이 몰리는 것을 줄이기 위한 lookahead prefetch다.
+      requestAnimationFrame(() => {
+        if (playSeqRef.current !== seq) return;
+        prefetchNextImage(
+          currentIndexRef.current,
+          seq,
+          "lookahead_after_image_commit",
+        );
+      });
+    },
+    [
+      clearVideo,
+      markDisplayChanged,
+      prefetchNextImage,
+      setVideoVisibleSafely,
+      startImageDurationTimer,
+      unlockTransition,
+    ],
+  );
+
+  const commitPendingImage = useCallback(
+    (reason: string) => {
+      const pending = pendingImageRef.current;
+
+      if (!pending) return;
+      if (playSeqRef.current !== pending.seq) return;
+
+      console.log("[PLAYER] commit front image:", {
+        reason,
+        url: pending.url,
+      });
+
+      if (pendingImageFallbackTimerRef.current) {
+        clearTimeout(pendingImageFallbackTimerRef.current);
+        pendingImageFallbackTimerRef.current = null;
+      }
+
+      pendingImageRef.current = null;
+      frontImageOpacityRef.current.stopAnimation();
+
+      const hadPreviousImage = !!currentImageUrlRef.current;
+
+      if (!hadPreviousImage) {
+        completeImageTransition(pending.url, pending.durationMs, pending.seq);
+        return;
+      }
+
+      frontImageOpacityRef.current.setValue(0);
+
+      Animated.timing(frontImageOpacityRef.current, {
+        toValue: 1,
+        duration: 100,
+        useNativeDriver: true,
+      }).start(({ finished }) => {
+        if (!finished) return;
+        if (playSeqRef.current !== pending.seq) return;
+
+        completeImageTransition(pending.url, pending.durationMs, pending.seq);
+      });
+    },
+    [completeImageTransition],
+  );
+
+  const handleFrontImageLoaded = useCallback(() => {
+    // onLoadEnd 직후 바로 교체하면 일부 Android TV에서 한 프레임 튈 수 있어서
+    // 다음 프레임에 100ms micro fade를 시작한다.
+    requestAnimationFrame(() => {
+      commitPendingImage("on_load_end");
+    });
+  }, [commitPendingImage]);
+
+  const handleImageError = useCallback(
+    (url: string, event: unknown, layer: "back" | "front") => {
+      console.log("[PLAYER] image error:", {
+        layer,
+        url,
+        event,
+      });
+
+      void sendDeviceLog({
+        deviceId,
+        eventType: "IMAGE_LOAD_ERROR",
+        level: "warn",
+        message: "image load failed",
+        url,
+        payload: {
+          layer,
+          currentIndex: currentIndexRef.current,
+          contentsLength: contentsRef.current.length,
+          currentContentType: "image",
+        },
+      });
+
+      if (layer === "front") {
+        pendingImageRef.current = null;
+
+        if (pendingImageFallbackTimerRef.current) {
+          clearTimeout(pendingImageFallbackTimerRef.current);
+          pendingImageFallbackTimerRef.current = null;
+        }
+
+        frontImageOpacityRef.current.stopAnimation();
+        frontImageOpacityRef.current.setValue(0);
+        setFrontImageUrl("");
+        unlockTransition();
+      }
+
+      goNext("image_error");
+    },
+    [deviceId, goNext, unlockTransition],
   );
 
   const playImage = useCallback(
-    (item: ContentItem, seq: number) => {
+    async (item: ContentItem, seq: number) => {
       clearTimers();
-      clearVideo();
 
       const url = item.url;
       const duration = Number(item.duration || IMAGE_DURATION_SECONDS);
+      const durationMs = Math.max(1, duration) * 1000;
+
+      currentImageDurationMsRef.current = durationMs;
 
       console.log("[PLAYER] play image:", {
         url,
         duration,
       });
 
-      setVideoVisible(false);
-      setCurrentImageUrl(url);
+      await prefetchImage(url, seq, "play_image");
+
+      if (playSeqRef.current !== seq) return;
+
       setStatus("playing");
 
-      imageTimerRef.current = setTimeout(() => {
-        if (playSeqRef.current !== seq) return;
-        goNext("image_duration_end");
-      }, Math.max(1, duration) * 1000);
+      pendingImageRef.current = {
+        seq,
+        url,
+        durationMs,
+      };
+
+      if (pendingImageFallbackTimerRef.current) {
+        clearTimeout(pendingImageFallbackTimerRef.current);
+      }
+
+      // 같은 URL이 반복되거나 특정 Android TV에서 onLoadEnd가 누락되는 경우를 대비한다.
+      // 기존 back image는 유지되므로 fallback이 동작해도 검정 화면으로 비우지는 않는다.
+      pendingImageFallbackTimerRef.current = setTimeout(() => {
+        commitPendingImage("fallback_timeout");
+      }, 1500);
+
+      frontImageOpacityRef.current.stopAnimation();
+      frontImageOpacityRef.current.setValue(0);
+      setFrontImageUrl(url);
     },
-    [clearTimers, clearVideo, goNext],
+    [clearTimers, commitPendingImage, prefetchImage],
   );
 
   const playVideo = useCallback(
     async (item: ContentItem, seq: number) => {
       clearTimers();
 
-      setVideoVisible(false);
-      setCurrentImageUrl("");
-      setStatus("playing");
-
       const url = item.url;
 
       console.log("[PLAYER] play video:", url);
 
+      activeContentTypeRef.current = "video";
+      isPreparingVideoRef.current = true;
+      preparingVideoSeqRef.current = seq;
+      activeVideoSeqRef.current = 0;
+
+      setStatus("playing");
+      setVideoVisibleSafely(false);
+
       try {
-        clearVideo();
+        try {
+          player.pause();
+        } catch (error) {
+          console.log("[PLAYER] video pause before replace failed:", error);
+        }
 
         videoStartTimerRef.current = setTimeout(() => {
           if (playSeqRef.current !== seq) return;
+          if (!isPreparingVideoRef.current) return;
 
           console.log("[PLAYER] video start timeout:", url);
+
+          isPreparingVideoRef.current = false;
+          preparingVideoSeqRef.current = 0;
+          setVideoVisibleSafely(false);
 
           void sendDeviceLog({
             deviceId,
@@ -602,7 +1087,8 @@ export function PlayerScreen({ token, deviceId, onLogout }: PlayerScreenProps) {
             },
           });
 
-          goNext("video_start_timeout");
+          unlockTransition();
+          goNextImage("video_start_timeout");
         }, VIDEO_START_TIMEOUT);
 
         await player.replaceAsync({
@@ -615,9 +1101,15 @@ export function PlayerScreen({ token, deviceId, onLogout }: PlayerScreenProps) {
         player.loop = false;
         player.play();
 
+        prefetchNextImage(currentIndexRef.current, seq, "video_next_image");
+
         console.log("[PLAYER] video play called:", url);
       } catch (error) {
         if (playSeqRef.current !== seq) return;
+
+        isPreparingVideoRef.current = false;
+        preparingVideoSeqRef.current = 0;
+        setVideoVisibleSafely(false);
 
         const message = getErrorMessage(error);
 
@@ -636,10 +1128,19 @@ export function PlayerScreen({ token, deviceId, onLogout }: PlayerScreenProps) {
           },
         });
 
-        goNext("video_error");
+        unlockTransition();
+        goNextImage("video_error");
       }
     },
-    [clearTimers, clearVideo, deviceId, goNext, player],
+    [
+      clearTimers,
+      deviceId,
+      goNextImage,
+      player,
+      prefetchNextImage,
+      setVideoVisibleSafely,
+      unlockTransition,
+    ],
   );
 
   const playCurrent = useCallback(() => {
@@ -648,9 +1149,10 @@ export function PlayerScreen({ token, deviceId, onLogout }: PlayerScreenProps) {
     clearTimers();
 
     if (!list.length) {
-      setCurrentImageUrl("");
-      setVideoVisible(false);
+      setImageUrlSafely("");
+      setVideoVisibleSafely(false);
       setStatus("empty");
+      unlockTransition();
       return;
     }
 
@@ -675,36 +1177,46 @@ export function PlayerScreen({ token, deviceId, onLogout }: PlayerScreenProps) {
       return;
     }
 
-    playImage(item, seq);
-  }, [clearTimers, goNext, playImage, playVideo]);
+    void playImage(item, seq);
+  }, [
+    clearTimers,
+    goNext,
+    playImage,
+    playVideo,
+    setImageUrlSafely,
+    setVideoVisibleSafely,
+    unlockTransition,
+  ]);
 
   const loadPlaylist = useCallback(
     async (reason?: string) => {
-      console.log("[PLAYER] load playlist:", reason);
+      const isInitialLoad = reason === "mount";
+      const hasExistingContents = contentsRef.current.length > 0;
 
-      playSeqRef.current += 1;
+      console.log("[PLAYER] load playlist:", {
+        reason,
+        isInitialLoad,
+        hasExistingContents,
+      });
 
-      clearTimers();
-      clearVideo();
+      if (isInitialLoad || !hasExistingContents) {
+        playSeqRef.current += 1;
 
-      setVideoVisible(false);
-      setCurrentImageUrl("");
-      setStatus("loading");
+        clearTimers();
+        clearVideo();
+
+        setVideoVisibleSafely(false);
+        setImageUrlSafely("");
+        setStatus("loading");
+      }
+
       setErrorMessage("");
 
       try {
         const response = await fetchDevices(token);
         const nextContents = extractContentsForDevice(response, deviceId);
 
-        contentsRef.current = nextContents;
-        setContents(nextContents);
-
-        currentIndexRef.current = 0;
-        setCurrentIndex(0);
-
         if (!nextContents.length) {
-          setStatus("empty");
-
           void sendDeviceLog({
             deviceId,
             eventType: "PLAYLIST_EMPTY",
@@ -715,17 +1227,55 @@ export function PlayerScreen({ token, deviceId, onLogout }: PlayerScreenProps) {
             },
           });
 
+          if (isInitialLoad || !hasExistingContents) {
+            contentsRef.current = [];
+            setContents([]);
+            setStatus("empty");
+          }
+
           return;
         }
 
+        contentsRef.current = nextContents;
+        setContents(nextContents);
+
+        if (isInitialLoad || !hasExistingContents) {
+          currentIndexRef.current = 0;
+          setCurrentIndex(0);
+          setStatus("playing");
+          return;
+        }
+
+        if (currentIndexRef.current >= nextContents.length) {
+          currentIndexRef.current = 0;
+          setCurrentIndex(0);
+        }
+
         setStatus("playing");
+
+        void sendDeviceLog({
+          deviceId,
+          eventType: "PLAYLIST_REFRESH_APPLIED",
+          level: "info",
+          message: "playlist refreshed while keeping current playback",
+          payload: {
+            reason,
+            contentsLength: nextContents.length,
+            currentIndex: currentIndexRef.current,
+          },
+        });
       } catch (error) {
         const message = getErrorMessage(error);
 
         console.log("[PLAYER] load playlist failed:", message);
 
         setErrorMessage(message);
-        setStatus("error");
+
+        if (isInitialLoad || !hasExistingContents) {
+          setStatus("error");
+        } else {
+          setStatus("playing");
+        }
 
         void sendDeviceLog({
           deviceId,
@@ -734,11 +1284,19 @@ export function PlayerScreen({ token, deviceId, onLogout }: PlayerScreenProps) {
           message,
           payload: {
             reason,
+            keptExistingPlayback: hasExistingContents && !isInitialLoad,
           },
         });
       }
     },
-    [clearTimers, clearVideo, deviceId, token],
+    [
+      clearTimers,
+      clearVideo,
+      deviceId,
+      setImageUrlSafely,
+      setVideoVisibleSafely,
+      token,
+    ],
   );
 
   const updateQuberStatus = useCallback(
@@ -1225,6 +1783,7 @@ export function PlayerScreen({ token, deviceId, onLogout }: PlayerScreenProps) {
     return () => {
       playSeqRef.current += 1;
       clearTimers();
+      unlockTransition();
       clearVideo();
     };
   }, [clearTimers, clearVideo, loadPlaylist]);
@@ -1541,6 +2100,18 @@ export function PlayerScreen({ token, deviceId, onLogout }: PlayerScreenProps) {
   useEventListener(player, "playingChange", ({ isPlaying }) => {
     if (!isPlaying) return;
 
+    const seq = preparingVideoSeqRef.current || activeVideoSeqRef.current;
+
+    if (!seq || playSeqRef.current !== seq) {
+      console.log("[PLAYER] ignored stale playingChange");
+      return;
+    }
+
+    if (activeContentTypeRef.current !== "video") {
+      console.log("[PLAYER] ignored playingChange while active content is not video");
+      return;
+    }
+
     if (videoStartTimerRef.current) {
       clearTimeout(videoStartTimerRef.current);
       videoStartTimerRef.current = null;
@@ -1548,24 +2119,66 @@ export function PlayerScreen({ token, deviceId, onLogout }: PlayerScreenProps) {
 
     console.log("[PLAYER] video playing");
 
-    setVideoVisible(true);
+    isPreparingVideoRef.current = false;
+    activeVideoSeqRef.current = seq;
+    preparingVideoSeqRef.current = 0;
+
+    setVideoVisibleSafely(true);
+    setImageUrlSafely("");
+    unlockTransition();
   });
 
   useEventListener(player, "playToEnd", () => {
+    if (activeContentTypeRef.current !== "video") {
+      console.log("[PLAYER] ignored stale video ended event");
+      return;
+    }
+
+    if (!videoVisibleRef.current) {
+      console.log("[PLAYER] ignored video ended while video is not visible");
+      return;
+    }
+
+    const seq = activeVideoSeqRef.current;
+
+    if (!seq || playSeqRef.current !== seq) {
+      console.log("[PLAYER] ignored stale video ended seq");
+      return;
+    }
+
     console.log("[PLAYER] video ended");
 
-    setVideoVisible(false);
+    // 다음 이미지가 준비되기 전까지 VideoView를 유지한다.
+    // 여기서 먼저 숨기면 영상 → 이미지 전환 사이에 검정 깜빡임이 생긴다.
     goNext("video_ended");
   });
 
   useEventListener(player, "statusChange", ({ status, error }) => {
     if (status !== "error") return;
 
+    if (
+      activeContentTypeRef.current !== "video" &&
+      !isPreparingVideoRef.current &&
+      !videoVisibleRef.current
+    ) {
+      console.log("[PLAYER] ignored stale video status error");
+      return;
+    }
+
+    const seq = preparingVideoSeqRef.current || activeVideoSeqRef.current;
+
+    if (seq && playSeqRef.current !== seq) {
+      console.log("[PLAYER] ignored stale video status error seq");
+      return;
+    }
+
     const message = getErrorMessage(error);
 
     console.log("[PLAYER] video status error:", message);
 
-    setVideoVisible(false);
+    isPreparingVideoRef.current = false;
+    preparingVideoSeqRef.current = 0;
+    setVideoVisibleSafely(false);
 
     void sendDeviceLog({
       deviceId,
@@ -1582,8 +2195,54 @@ export function PlayerScreen({ token, deviceId, onLogout }: PlayerScreenProps) {
       },
     });
 
-    goNext("video_status_error");
+    unlockTransition();
+    goNextImage("video_status_error");
   });
+
+  useEffect(() => {
+    if (status !== "playing") return;
+
+    const timer = setInterval(() => {
+      if (activeContentTypeRef.current !== "image") return;
+      if (isTransitioningRef.current) return;
+      if (!contentsRef.current.length) return;
+
+      const elapsed = Date.now() - lastDisplayChangedAtRef.current;
+      const allowedMs = Math.max(
+        currentImageDurationMsRef.current + 15000,
+        IMAGE_STUCK_TIMEOUT,
+      );
+
+      if (elapsed <= allowedMs) return;
+
+      console.log("[PLAYER] image stuck watchdog triggered:", {
+        elapsed,
+        allowedMs,
+        currentIndex: currentIndexRef.current,
+        currentImageUrl: currentImageUrlRef.current,
+      });
+
+      void sendDeviceLog({
+        deviceId,
+        eventType: "IMAGE_STUCK_WATCHDOG",
+        level: "warn",
+        message: "same image displayed too long. moving to next content",
+        url: currentImageUrlRef.current,
+        payload: {
+          elapsed,
+          allowedMs,
+          currentIndex: currentIndexRef.current,
+          contentsLength: contentsRef.current.length,
+        },
+      });
+
+      goNext("image_stuck_watchdog");
+    }, DISPLAY_WATCHDOG_INTERVAL);
+
+    return () => {
+      clearInterval(timer);
+    };
+  }, [deviceId, goNext, status]);
 
   if (status === "loading") {
     return (
@@ -1621,33 +2280,34 @@ export function PlayerScreen({ token, deviceId, onLogout }: PlayerScreenProps) {
     );
   }
 
-  const current = contents[currentIndex];
-
   return (
     <View style={styles.root}>
-      {current?.type === "image" && currentImageUrl ? (
+      {backImageUrl ? (
         <Image
-          source={{ uri: currentImageUrl }}
-          style={styles.media}
+          source={{ uri: backImageUrl }}
+          style={[styles.media, styles.backgroundImage]}
           resizeMode="contain"
-          onError={(event) => {
-            console.log("[PLAYER] image error:", event.nativeEvent);
+          fadeDuration={0}
+          onError={(event) =>
+            handleImageError(backImageUrl, event.nativeEvent, "back")
+          }
+        />
+      ) : null}
 
-            void sendDeviceLog({
-              deviceId,
-              eventType: "IMAGE_LOAD_ERROR",
-              level: "warn",
-              message: "image load failed",
-              url: currentImageUrl,
-              payload: {
-                currentIndex: currentIndexRef.current,
-                contentsLength: contentsRef.current.length,
-                currentContentType: "image",
-              },
-            });
-
-            goNext("image_error");
-          }}
+      {frontImageUrl ? (
+        <Animated.Image
+          source={{ uri: frontImageUrl }}
+          style={[
+            styles.media,
+            styles.frontImage,
+            { opacity: frontImageOpacityRef.current },
+          ]}
+          resizeMode="contain"
+          fadeDuration={0}
+          onLoadEnd={handleFrontImageLoaded}
+          onError={(event) =>
+            handleImageError(frontImageUrl, event.nativeEvent, "front")
+          }
         />
       ) : null}
 
@@ -1675,9 +2335,16 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "#000",
   },
+  backgroundImage: {
+    opacity: 1,
+    zIndex: 1,
+  },
+  frontImage: {
+    zIndex: 2,
+  },
   visibleMedia: {
     opacity: 1,
-    zIndex: 2,
+    zIndex: 3,
   },
   hiddenMedia: {
     opacity: 0,
